@@ -153,6 +153,12 @@ FAR const char *fs_gettype(FAR struct statfs *statbuf)
         break;
 #endif
 
+#ifdef CONFIG_FS_MNEMOFS
+      case MNEMOFS_MAGIC:
+        fstype = "mnemofs";
+        break;
+#endif
+
       default:
         fstype = "Unrecognized";
         break;

@@ -98,6 +98,9 @@ extern const struct mountpt_operations g_romfs_operations;
 #ifdef CONFIG_FS_SMARTFS
 extern const struct mountpt_operations g_smartfs_operations;
 #endif
+#ifdef CONFIG_FS_MNEMOFS
+extern const struct mountpt_operations g_mnemofs_operations;
+#endif
 #ifdef CONFIG_FS_LITTLEFS
 extern const struct mountpt_operations g_littlefs_operations;
 #endif
@@ -112,6 +115,9 @@ static const struct fsmap_t g_bdfsmap[] =
 #endif
 #ifdef CONFIG_FS_SMARTFS
     { "smartfs", &g_smartfs_operations },
+#endif
+#ifdef CONFIG_FS_MNEMOFS
+    { "mnemofs", &g_mnemofs_operations },
 #endif
 #ifdef CONFIG_FS_LITTLEFS
     { "littlefs", &g_littlefs_operations },
