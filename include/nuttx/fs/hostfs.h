@@ -184,7 +184,7 @@ struct nuttx_stat_s
   struct nuttx_timespec st_atim;    /* Time of last access */
   struct nuttx_timespec st_mtim;    /* Time of last modification */
   struct nuttx_timespec st_ctim;    /* Time of last status change */
-  nuttx_blksize_t       st_blksize; /* Block size used for filesystem I/O */
+  int32_t       st_blksize; /* Block size used for filesystem I/O */
   nuttx_blkcnt_t        st_blocks;  /* Number of blocks allocated */
 };
 

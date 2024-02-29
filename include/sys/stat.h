@@ -153,7 +153,7 @@ struct stat
   struct timespec  st_atim;    /* Time of last access */
   struct timespec  st_mtim;    /* Time of last modification */
   struct timespec  st_ctim;    /* Time of last status change */
-  blksize_t        st_blksize; /* Block size used for filesystem I/O */
+  int32_t        st_blksize; /* Block size used for filesystem I/O */
   blkcnt_t         st_blocks;  /* Number of blocks allocated */
 };
 

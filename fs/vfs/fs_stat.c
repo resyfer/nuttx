@@ -30,6 +30,7 @@
 #include <sched.h>
 #include <assert.h>
 #include <errno.h>
+#include <stdio.h>
 
 #include "inode/inode.h"
 #include <nuttx/mtd/mtd.h>
@@ -117,7 +118,6 @@ static int stat_recursive(FAR const char *path,
       if (inode->u.i_mops && inode->u.i_mops->stat)
         {
           /* Perform the stat() operation */
-
           ret = inode->u.i_mops->stat(inode, desc.relpath, buf);
         }
       else
@@ -177,7 +177,6 @@ int nx_stat(FAR const char *path, FAR struct stat *buf, int resolve)
   /* The perform the stat() operation on the path.  This is potentially
    * recursive if soft link support is enabled.
    */
-
   return stat_recursive(path, buf, resolve);
 }
 

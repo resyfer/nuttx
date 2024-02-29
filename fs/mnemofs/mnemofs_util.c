@@ -1,5 +1,5 @@
 /****************************************************************************
- * fs/mnemofs/mnemofs.c
+ * fs/mnemofs/mnemofs_util.c
  * Mnemofs:  Filesystem optimized for NAND Solid State Device storages.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
@@ -22,12 +22,8 @@
 /****************************************************************************
  * Included Files
  ****************************************************************************/
-#include <stdio.h>
 
-#include <nuttx/fs/fs.h>
-#include <nuttx/kmalloc.h>
-#include <nuttx/mtd/mtd.h>
-
+#include <stddef.h>
 #include "mnemofs.h"
 
 /****************************************************************************
@@ -42,85 +38,47 @@
  * Private Function Prototypes
  ****************************************************************************/
 
-static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
-                        FAR void** handle);
-
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
+// static inline uint32_t chunk_to_block(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t chunk)
+// {
+//   return (chunk << MFS_LOG_BLOCKS_PER_CHUNK) * sb->n_pages_per_block;
+// }
+
+// static inline uint32_t block_to_chunk(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t block)
+// {
+//   return block >> MFS_LOG_BLOCKS_PER_CHUNK;
+// }
+
+// static inline uint32_t chunk_to_page(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t chunk)
+// {
+//   return chunk_to_block(sb, chunk) * sb->n_pages_per_block;
+// }
+
+// static inline uint32_t page_to_chunk(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t page)
+// {
+//   return block_to_chunk(sb, page / sb->n_pages_per_block);
+// }
+
+// static inline uint32_t block_to_page(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t block)
+// {
+//   return block * sb->n_pages_per_block;
+// }
+
+// static inline uint32_t page_to_block(FAR const struct mfs_sb_info_s *sb,
+//                                       const uint32_t page)
+// {
+//   return page / sb->n_pages_per_block;
+// }
+
+
 /****************************************************************************
  * Public Data
  ****************************************************************************/
-
-const struct mountpt_operations g_mnemofs_operations =
-{
-  NULL, /* open */
-  NULL, /* close */
-  NULL, /* read */
-  NULL, /* write */
-  NULL, /* seek */
-  NULL, /* ioctl */
-  NULL, /* mmap */
-  NULL, /* truncate */
-  NULL, /* poll */
-
-  NULL, /* sync */
-  NULL, /* dup */
-  NULL, /* fstat */
-  NULL, /* fchstat */
-
-  NULL, /* opendir */
-  NULL, /* closedir */
-  NULL, /* readdir */
-  NULL, /* rewinddir */
-
-  mnemofs_bind, /* bind */
-  NULL, /* unbind */
-  NULL, /* statfs */
-
-  NULL, /* unlink */
-  NULL, /* mkdir */
-  NULL, /* rmdir */
-  NULL, /* rename */
-  NULL, /* stat */
-  NULL  /* chstat */
-};
-
-static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
-                        FAR void** handle)
-{
-  FAR struct mfs_sb_info_s *sb_info;
-  FAR struct mtd_geometry_s fs_geo;
-
-  sb_info = kmm_zalloc(sizeof(struct mfs_sb_info_s));
-
-  DEBUGASSERT(blkdriver);
-  sb_info->blkdrv = blkdriver;
-
-  // TODO Filesystem Locks
-  
-  DEBUGASSERT(blkdriver->u.i_mtd && blkdriver->u.i_mtd->ioctl);
-
-  if(INODE_IS_MTD(blkdriver) && blkdriver->u.i_mtd->ioctl)
-    {
-      MTD_IOCTL(blkdriver->u.i_mtd, MTDIOC_GEOMETRY, (unsigned long) &fs_geo);
-
-      sb_info->n_page_size = fs_geo.blocksize;
-      sb_info->n_pages_per_block = fs_geo.erasesize / fs_geo.blocksize;
-      sb_info->n_chunks = fs_geo.neraseblocks / MFS_BLOCKS_PER_CHUNK;
-
-      // TODO: log
-    }
-  else
-    {
-      // TODO: log
-      return -EINVAL;
-    }
-  
-  // TODO: As of now, no need to read superblock from disk.
-  
-  // struct mfs_block_info_s *b_info;
-
-  return OK;
-}

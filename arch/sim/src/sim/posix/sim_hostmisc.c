@@ -87,7 +87,7 @@ void host_abort(int status)
  * Name: host_backtrace
  *
  * Description:
- *   bcaktrace
+ *   backtrace
  *
  * Input Parameters:
  *   array - return array, which backtrace will be stored

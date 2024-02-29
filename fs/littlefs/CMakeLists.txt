@@ -20,7 +20,7 @@
 
 if(CONFIG_FS_LITTLEFS)
   if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/littlefs)
-    set(LITTLEFS_VERSION 2.4.0)
+    set(LITTLEFS_VERSION 2.5.1)
 
     FetchContent_Declare(
       littlefs
