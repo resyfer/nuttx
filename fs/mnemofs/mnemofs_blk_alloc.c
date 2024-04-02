@@ -1,6 +1,6 @@
 /****************************************************************************
- * fs/mnemofs/mnemofs_util.c
- * Mnemofs:  Filesystem optimized for NAND Solid State Device storages.
+ * fs/mnemofs/mnemofs_blk_alloc.c
+ * Block ALlocator for mnemofs
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -23,8 +23,7 @@
  * Included Files
  ****************************************************************************/
 
-#include <stddef.h>
-#include "mnemofs.h"
+#include <nuttx/mtd/nand.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -34,6 +33,37 @@
  * Private Types
  ****************************************************************************/
 
+enum chk_color {
+  RED,
+  BLACK
+};
+
+struct chk_node {
+  uint8_t   color: 1;
+  uint8_t   __res1: 1;
+  uint16_t  chk_no: 14;
+  uint16_t  chk_wear;
+  
+  uint8_t   __res2: 1;
+  uint16_t chk_rb_left: 14;
+  uint8_t   __res3: 1;
+  uint16_t chk_rb_right: 14;
+  
+  uint8_t   __res4: 1;
+  uint16_t chk_hp_left: 14;
+  uint8_t   __res5: 1;
+  uint16_t chk_hp_right: 14;
+};
+
+struct blk_allc {
+  struct chk_node *free;
+  struct chk_node *part;
+  struct chk_node *full;
+};
+
+// TODO: Use this.
+// static struct blk_allc alloc;
+
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
@@ -42,83 +72,38 @@
  * Private Data
  ****************************************************************************/
 
-// static inline uint32_t chunk_to_block(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t chunk)
-// {
-//   return (chunk << MFS_LOG_BLOCKS_PER_CHUNK) * sb->n_pages_per_block;
-// }
-
-// static inline uint32_t block_to_chunk(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t block)
-// {
-//   return block >> MFS_LOG_BLOCKS_PER_CHUNK;
-// }
-
-// static inline uint32_t chunk_to_page(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t chunk)
-// {
-//   return chunk_to_block(sb, chunk) * sb->n_pages_per_block;
-// }
-
-// static inline uint32_t page_to_chunk(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t page)
-// {
-//   return block_to_chunk(sb, page / sb->n_pages_per_block);
-// }
-
-// static inline uint32_t block_to_page(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t block)
-// {
-//   return block * sb->n_pages_per_block;
-// }
-
-// static inline uint32_t page_to_block(FAR const struct mfs_sb_info_s *sb,
-//                                       const uint32_t page)
-// {
-//   return page / sb->n_pages_per_block;
-// }
-
-
 /****************************************************************************
  * Public Data
  ****************************************************************************/
 
-uint8_t chksm(char *data, int data_len) {
-  int c = 0;
-  int i = 0;
 
-  for(; i < data_len; i++) {
-    c += data[i];
-    c %= (1 << 8);
-  }
-  
-  return c;
-}
-
-/* Highest 2^x dividing num */
-uint8_t mnemofs_two_x(uint32_t num) {
-  uint32_t pow = ((num) & (~(num - 1)));
-  int c = 0;
-  /* TODO: Use include/nuttx/lib/math.h as an option if proper header is set. */
-  while(pow) {
-    c++;
-    pow >>= 1;
-  }
-
-  return c - 1;
-}
-
-uint8_t mnemofs_log2(uint32_t num) {
-  uint8_t c = 0;
-  while(num) {
-    c++;
-    num>>=1;
-  }
-  return c - 1;
-}
-
-/* Get if file or directory (or maybe link later)*/
-uint8_t mnemofs_get_type(mode_t mode) {
+/* Initializes the block allocator and required memory */
+int mnemofs_blk_alloc_init(void)
+{
   /* TODO */
+  return OK;
+}
+
+/* Free memory of block allocator. */
+int mnemofs_blk_alloc_exit(void)
+{
+  /* TODO */
+  return OK;
+}
+
+/* TODO: Mark that the block is being used to write on it. mutex. */
+uint32_t mnemofs_get_blk(void) {
+  /* TODO */
+  return 0;
+}
+
+uint32_t mnemofs_get_pg(void) {
+  /* TODO */
+  return 0;
+}
+
+/* TODO: Mark that a block is full. Mostly used when block is written fully.
+This is useful especially for master nodes and journal nodes. */
+int mnemofs_blk_mark_full(uint32_t blk) {
   return OK;
 }

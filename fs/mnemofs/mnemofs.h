@@ -27,58 +27,82 @@
  ****************************************************************************/
 
 #include <stddef.h>
+#include <nuttx/fs/fs.h>
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MFS_LOG_BLOCKS_PER_CHUNK    (16)
-#define MFS_BLOCKS_PER_CHUNK        (1 << MFS_LOG_BLOCKS_PER_CHUNK)
+#define MNEMOFS_JRNL_MAGIC  "-mnemoj-"
+#define MNEMOFS_MASTER_MAGIC  "-mnemon-"
 
-// TODO: File structure according to NuttX standard
+#define MNEMOFS_JOURNAL_N 20 /* TODO: option based on mount (saved into superblock )*/
+#define MNEMOFS_BLK_T_PG(sb, blk) ((blk) << sb->log_pg_in_blk)
+#define MNEMOFS_PG_T_BLK(sb, pg) ((pg) >> sb->log_pg_in_blk)
+#define MNEMOFS_BLK_START(sb, pg) (MNEMOFS_BLK_T_PG(sb, MNEMOFS_PG_T_BLK(sb, pg)))
+#define MNEMOFS_BLK_END(sb, pg) (MNEMOFS_BLK_START(sb, pg) + sb->pg_in_blk - 1)
 
-/* Super block */
-struct mfs_sb_disk_s
-{
+#define MNEMOFS_SB(mountpt) ((struct mnemofs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
+
+struct mnemofs_sb_info {
+  uint8_t pg_sz;
+  uint8_t pg_in_blk;
+  uint8_t log_pg_in_blk;
+  uint8_t jrnl_blks;
+  uint32_t master_node;
+  struct inode root_ino;
 };
 
-struct mfs_sb_info_s
-{
-  //TODO: mutex_t fs_lock;
-
-  FAR struct inode *blkdrv;
-  // FAR struct mtd_geometry_s fs_geo;
-  uint32_t n_chunks; /* Chunks are 1 << 31 B in size approx */
-  uint32_t n_pages_per_block; /* 1 << 5 or 1 << 6 usually */
-  uint32_t n_page_size;
-
-  struct mfs_sb_disk_s sb_disk;
+struct mnemofs_file {
+  uint32_t pg_start; /* Page of the last CTZ block */
+  uint32_t start_blk; /* CTZ Blk Number of the last blk */
+  ssize_t f_size; /* File size in bytes */
 };
 
-/* Chunk */
-struct mfs_chunk_disk_s
-{
-  
+enum {
+  MNEMOFS_FILE,
+  MNEMOFS_DIR,
 };
 
-/* Block */
-struct mfs_block_disk_s
-{
-  union
-  {
-    struct mfs_block_disk_s *block;
-    uint8_t __res1[64];
-  };
+/* mnemofs_nand.c */
 
-  union
-  {
-    struct mfs_chunk_disk_s *chunk;
-    uint8_t __res2[64];
-  };
+int mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+int mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+
+/* mnemofs_blk_alloc.c */
+
+uint32_t mnemofs_get_blk(void);
+uint32_t mnemofs_get_pg(void);
+int mnemofs_blk_mark_full(uint32_t blk);
+
+/* mnemofs_journal.c */
+
+enum {
+  LOG_FILE,
+  LOG_DIR,
+  LOG_MASTER,
+  LOG_MAX,
 };
 
-struct mfs_block_info_s
-{
-};
+/* mnemofs_master.c */
+
+void init_master(uint32_t mb0, uint32_t mb1);
+int save_master_log(uint32_t new_mb);
+int get_master(char *data, int data_len);
+
+/* mnemofs_util.c */
+
+uint8_t mnemofs_chksm(char *data, int data_len);
+uint8_t mnemofs_two_x(uint32_t num);
+uint8_t mnemofs_log2(uint32_t num);
+
+/* mnemofs_dir.c */
+
+int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode);
+
+/* mnemofs_file.c */
+
+int __mnemofs_file_read(struct mnemofs_file *file, off_t off, char *buf, ssize_t len);
+int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */

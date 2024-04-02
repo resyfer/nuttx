@@ -44,6 +44,29 @@
 
 static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
                         FAR void** handle);
+static int mnemofs_unbind(FAR void *handle, FAR struct inode **blkdriver,
+                          unsigned int flags);
+static int mnemofs_statfs(FAR struct inode *mountpt, FAR struct statfs *buf);
+
+static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath);
+static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
+                          mode_t mode);
+static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath);
+static int mnemofs_rename(FAR struct inode *mountpt,
+                          FAR const char *oldrelpath,
+                          FAR const char *newrelpath);
+static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
+                          FAR struct stat *buf);
+
+static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
+                            FAR struct fs_dirent_s **dir);
+static int mnemofs_closedir(FAR struct inode *mountpt,
+                            FAR struct fs_dirent_s *dir);
+static int mnemofs_readdir(FAR struct inode *mountpt,
+                            FAR struct fs_dirent_s *dir,
+                            FAR struct dirent *entry);
+static int mnemofs_rewinddir(FAR struct inode *mountpt,
+                              FAR struct fs_dirent_s *dir);
 
 /****************************************************************************
  * Private Data
@@ -70,57 +93,108 @@ const struct mountpt_operations g_mnemofs_operations =
   NULL, /* fstat */
   NULL, /* fchstat */
 
-  NULL, /* opendir */
-  NULL, /* closedir */
-  NULL, /* readdir */
-  NULL, /* rewinddir */
+  mnemofs_opendir, /* opendir */
+  mnemofs_closedir, /* closedir */
+  mnemofs_readdir, /* readdir */
+  mnemofs_rewinddir, /* rewinddir */
 
   mnemofs_bind, /* bind */
-  NULL, /* unbind */
-  NULL, /* statfs */
+  mnemofs_unbind, /* unbind */
+  mnemofs_statfs, /* statfs */
 
-  NULL, /* unlink */
-  NULL, /* mkdir */
-  NULL, /* rmdir */
-  NULL, /* rename */
-  NULL, /* stat */
+  mnemofs_unlink, /* unlink */
+  mnemofs_mkdir, /* mkdir */
+  mnemofs_rmdir, /* rmdir */
+  mnemofs_rename, /* rename */
+  mnemofs_stat, /* stat */
   NULL  /* chstat */
 };
+
+/* Volume Ops */
 
 static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
                         FAR void** handle)
 {
-  FAR struct mfs_sb_info_s *sb_info;
-  FAR struct mtd_geometry_s fs_geo;
+  /* TODO */
+  return OK;
+}
 
-  sb_info = kmm_zalloc(sizeof(struct mfs_sb_info_s));
+static int mnemofs_unbind(FAR void *handle, FAR struct inode **blkdriver,
+                          unsigned int flags)
+{
+  /* TODO */
+  return OK;
+}
 
-  DEBUGASSERT(blkdriver);
-  sb_info->blkdrv = blkdriver;
+static int mnemofs_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
+{
+  /* TODO */
+  return OK;
+}
 
-  // TODO Filesystem Locks
-  
-  DEBUGASSERT(blkdriver->u.i_mtd && blkdriver->u.i_mtd->ioctl);
+/* Path Ops */
 
-  if(INODE_IS_MTD(blkdriver) && blkdriver->u.i_mtd->ioctl)
-    {
-      MTD_IOCTL(blkdriver->u.i_mtd, MTDIOC_GEOMETRY, (unsigned long) &fs_geo);
+static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath)
+{
+  /* TODO */
+  return OK;
+}
 
-      sb_info->n_page_size = fs_geo.blocksize;
-      sb_info->n_pages_per_block = fs_geo.erasesize / fs_geo.blocksize;
-      sb_info->n_chunks = fs_geo.neraseblocks / MFS_BLOCKS_PER_CHUNK;
+static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
+                          mode_t mode)
+{
+  /* TODO: mountpt->i_private needs to have the sb_info */
+  return mnemofs_create_dir(MNEMOFS_SB(mountpt), relpath, mode);
+}
 
-      // TODO: log
-    }
-  else
-    {
-      // TODO: log
-      return -EINVAL;
-    }
-  
-  // TODO: As of now, no need to read superblock from disk.
-  
-  // struct mfs_block_info_s *b_info;
+static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath)
+{
+  /* TODO */
+  return OK;
+}
 
+static int mnemofs_rename(FAR struct inode *mountpt,
+                          FAR const char *oldrelpath,
+                          FAR const char *newrelpath)
+{
+  /* TODO */
+  return OK;
+}
+
+static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
+                          FAR struct stat *buf)
+{
+  /* TODO */
+  return OK;
+}
+
+/* Dir Ops */
+
+static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
+                            FAR struct fs_dirent_s **dir)
+{
+  /* TODO */
+  return OK;
+}
+
+static int mnemofs_closedir(FAR struct inode *mountpt,
+                            FAR struct fs_dirent_s *dir)
+{
+  /* TODO */
+  return OK;
+}
+
+static int mnemofs_readdir(FAR struct inode *mountpt,
+                            FAR struct fs_dirent_s *dir,
+                            FAR struct dirent *entry)
+{
+  /* TODO */
+  return OK;
+}
+
+static int mnemofs_rewinddir(FAR struct inode *mountpt,
+                              FAR struct fs_dirent_s *dir)
+{
+  /* TODO */
   return OK;
 }

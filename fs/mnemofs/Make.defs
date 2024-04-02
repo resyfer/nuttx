@@ -23,6 +23,13 @@ ifeq ($(CONFIG_FS_MNEMOFS),y)
 # Add the mnemofs C files to the build
 
 CSRCS += mnemofs.c
+CSRCS += mnemofs_blk_alloc.c
+CSRCS += mnemofs_dir.c
+CSRCS += mnemofs_file.c
+CSRCS += mnemofs_journal.c
+CSRCS += mnemofs_master.c
+CSRCS += mnemofs_nand.c
+CSRCS += mnemofs_util.c
 
 # Add the mnemofs directory to the build
 

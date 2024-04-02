@@ -19,5 +19,7 @@
 # ##############################################################################
 
 if(CONFIG_FS_MNEMOFS)
-  target_sources(fs PRIVATE mnemofs.c)
+  target_sources(fs PRIVATE mnemofs.c mnemofs_blk_alloc.c mnemofs_dir.c
+                  mnemofs_file.c mnemofs_journal.c mnemofs_master.c
+                  mnemofs_nand.c mnemofs_util.c)
 endif()
