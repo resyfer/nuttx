@@ -173,8 +173,7 @@ static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
 static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
                             FAR struct fs_dirent_s **dir)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_opendir(MNEMOFS_SB(mountpt), relpath, dir);
 }
 
 static int mnemofs_closedir(FAR struct inode *mountpt,

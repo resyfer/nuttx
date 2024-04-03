@@ -19,6 +19,8 @@
  *
  ****************************************************************************/
 
+/* TODO:::::::::::::::: ALL POINTERS NEED A "FAR" BEFORE THEM. */
+
 #ifndef __FS_MNEMOFS_MNEMOFS_H
 #define __FS_MNEMOFS_MNEMOFS_H
 
@@ -44,6 +46,8 @@
 
 #define MNEMOFS_SB(mountpt) ((struct mnemofs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
 
+struct direntry_info;
+
 struct mnemofs_sb_info {
   uint8_t pg_sz;
   uint8_t pg_in_blk;
@@ -51,12 +55,30 @@ struct mnemofs_sb_info {
   uint8_t jrnl_blks;
   uint32_t master_node;
   struct inode root_ino;
+  struct mnemofs_file *f_start;
+  struct mnemofs_file *f_end;
+  struct mnemofs_dir *d_start;
+  struct mnemofs_dir *d_end;
+  struct direntry_info *root; /* TODO: Initialize */
 };
 
+/* Open files */
 struct mnemofs_file {
-  uint32_t pg_start; /* Page of the last CTZ block */
-  uint32_t start_blk; /* CTZ Blk Number of the last blk */
+  struct mnemofs_file *next;
+  uint32_t pg_start; /* Page corresponding to the last CTZ block */
+  uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
   ssize_t f_size; /* File size in bytes */
+};
+
+/* Open directory */
+struct mnemofs_dir {
+  struct mnemofs_dir *prev;
+  struct mnemofs_dir *next;
+  uint8_t pathlen;
+  char *path;
+  uint32_t pg_start; /* Page corresponding to the last CTZ block */
+  uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
+  ssize_t off; /* Current offset in bytes */
 };
 
 enum {
@@ -100,9 +122,11 @@ uint8_t mnemofs_log2(uint32_t num);
 
 int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode);
 
+int __mnemofs_opendir(struct mnemofs_sb_info *info,  FAR const char *relpath, FAR struct fs_dirent_s **dir);
+
 /* mnemofs_file.c */
 
-int __mnemofs_file_read(struct mnemofs_file *file, off_t off, char *buf, ssize_t len);
+int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_t off, char *buf, ssize_t len);
 int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */

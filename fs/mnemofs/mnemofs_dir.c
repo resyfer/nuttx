@@ -5,6 +5,21 @@
 
 #include "mnemofs.h"
 
+enum DIR_SEARCH_ERR {
+  DIR_SEARCH_OK,
+  DIR_SEARCH_NOT_FOUND,
+  DIR_SEARCH_INVALID_PARENT,
+};
+
+struct mnemofs_fs_dirent {
+  struct fs_dirent_s base;
+  struct {
+    struct mnemofs_dir *d;
+  } dir;
+};
+
+#define FILE_END  -1
+
 /* Direntry in memory */
 struct direntry_info {
   uint8_t hash;
@@ -35,7 +50,8 @@ struct direntry_info {
 
 static ssize_t find_name_len(FAR const char *path);
 static uint8_t calc_name_hash(FAR const char *path, ssize_t len);
-static struct direntry_info search_direntries(struct direntry_info parent, FAR const char *name, ssize_t namelen);
+static int search_direntries(struct direntry_info *parent, struct direntry_info *child, FAR const char *name, ssize_t namelen);
+static int search_direntries_r(struct direntry_info *parent, struct direntry_info *child, FAR const char *path, ssize_t pathlen);
 
 /* Like strtok, but does not change string. */
 static ssize_t find_name_len(FAR const char *path) {
@@ -60,20 +76,28 @@ static uint8_t calc_name_hash(FAR const char *path, ssize_t len) {
 }
 
 /* Denotes the pg and off as 0 if error. */
-static struct direntry_info search_direntries(struct direntry_info parent, FAR const char *name, ssize_t namelen) {
+/* Only searches immediate child */
+static int search_direntries(struct direntry_info *parent, struct direntry_info *child, FAR const char *name, ssize_t namelen) {
   struct direntry_info ret = {0};
 
   ret.hash = calc_name_hash(name, namelen);
   ret.name = name;
   ret.namelen = namelen;
-  ret.parent_path = parent.name; /* TODO: FULL PATH of parent by appending parent's parent path and name. */
-  ret.parent_pathlen = parent.namelen; /* TODO: Same parent treatment. */
+  ret.parent_path = parent->name; /* TODO: FULL PATH of parent by appending parent's parent path and name. */ /* TODO: Copy the path, not reference */
+  ret.parent_pathlen = parent->namelen; /* TODO: Same parent treatment. */
   /* TODO: add the ret.dir_f properties here after search */
 
   /* TODO: Implement files, use inner implementation function to read the file data */
 
   /* Use calc_name_hash & strcmp for hash collisions */
-  return ret;
+  memcpy(parent, &ret, sizeof(ret));
+  return DIR_SEARCH_OK;
+}
+
+/* Recursive search (Iterative) */
+/* TODO: Error system like 0 - Found an entry, 1 - No entry at that location, 2 - Parent not found (ie. search stopped midway) */
+static int search_direntries_r(struct direntry_info *parent, struct direntry_info *child, FAR const char *path, ssize_t pathlen) {
+  return DIR_SEARCH_OK;
 }
 
 int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
@@ -87,14 +111,18 @@ int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t 
   char *buf = NULL;
 
   /* Root is cur_dir */
-  cur_dir.hash = calc_name_hash("/", 1); /* TODO: check if `path` contains `/` in first character */
-  cur_dir.name = "/";
-  cur_dir.namelen = 1;
-  cur_dir.pg = sb->master_node;
-  cur_dir.off = 0;
-  cur_dir.parent_path = NULL;
-  cur_dir.parent_pathlen = 0;
-  cur_dir.mode = 0777; /* TOD: verify root's mode. */
+  /* TODO: Create a macro for this, or store in SB. */
+  /* TODO: Initialize this in SB */
+  // cur_dir.hash = calc_name_hash("/", 1); /* TODO: check if `path` contains `/` in first character */
+  // cur_dir.name = "/";
+  // cur_dir.namelen = 1;
+  // cur_dir.pg = sb->master_node;
+  // cur_dir.off = 0;
+  // cur_dir.parent_path = NULL;
+  // cur_dir.parent_pathlen = 0;
+  // cur_dir.mode = 0777; /* TOD: verify root's mode. */
+
+  memcpy(&cur_dir, sb->root, sizeof(cur_dir));
 
   while(1) {
 
@@ -113,9 +141,13 @@ int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t 
 
     name = name + namelen + 1;
     namelen = find_name_len(name);
-    tmp = search_direntries(cur_dir, name, namelen);
+    ret = search_direntries(&cur_dir, &tmp, name, namelen);
+    /* TODO: Check for return values. */
     if(tmp.pg == 0 && tmp.off == 0) {
       /* Not found, so we're good, and move on to creating it. */
+      /* TODO: WARNING: This point might not be the final directory path
+      we want. This might be a parent in the path that has not been created
+      yet. */
       break;
     }
 
@@ -159,13 +191,96 @@ int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t 
   memcpy(buf + DIRENT_NAMELEN_OFF, &tmp.namelen, sizeof(tmp.namelen));
   memcpy(buf + DIRENT_NAME_OFF, tmp.name, namelen);
 
-  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), cur_dir.dir_f.f_size);
+  /* Insert at end */
+  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), tmp.dir_f.f_size);
   if(ret < 0) {
     goto errout_with_buf;
   }
 
 errout_with_buf:
   kmm_free(buf);
+
+errout:
+  return ret;
+}
+
+//---------------------------------
+
+/* TODO: THER IS INCONSISTENT DEPICTION OF DIR GOING ON. THIS IS STEMMING FROM EITHER REQUIRING SIZE OF THE DIRECTORY ENTRY FILE,
+OR NOT REQUIRING IT. NEED TO THINK ABOUT THIS WELL. KEEPING A SIZE FOR DIR WOULD MEAN UPDATING THE PARENT'S DIRENTRY EVERYTIME THERE
+IS AN ADDITION. BUT THIS WOULD ALSO BE A USUAL CASE AS ANY ADDITION MOVES THE LAST BLOCK OF THE CTZ, AND THUS THE PARENT NEEDS TO BE
+UPDATED ANYWAY.
+
+
+SO ADD SIZE LATER.*/
+int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR struct fs_dirent_s **dir) {
+
+  int ret = OK;
+  struct mnemofs_dir *d;
+  struct direntry_info parent, child;
+  unsigned long pathlen;
+  struct mnemofs_fs_dirent *fdir;
+
+  pathlen = strlen(relpath);
+
+  /* Check Directory */
+  ret = search_direntries_r(&parent, &child, relpath, pathlen);
+  if(ret == DIR_SEARCH_INVALID_PARENT) {
+    ret = -ENOENT;
+    goto errout;
+  } else if (ret == DIR_SEARCH_NOT_FOUND) {
+    ret = -ENOENT;
+  }
+
+  if(!S_ISDIR(child.mode)) {
+    ret = -ENOTDIR;
+    goto errout;
+  }
+
+  /* We have directory, open it */
+  d = kmm_zalloc(sizeof(*d));
+  if(!d) {
+    ret = -ENOMEM;
+    goto errout;
+  }
+
+  d->pathlen = pathlen;
+  d->path = kmm_zalloc(d->pathlen);
+  if(!d->path) {
+    ret = -ENOMEM;
+    goto errout_with_d;
+  }
+
+  /* Get fdir mem */
+  fdir = kmm_zalloc(sizeof(*fdir));
+  if(!fdir) {
+    ret = -ENOMEM;
+    goto errout_with_path;
+  }
+
+  strncpy(d->path, relpath, d->pathlen);
+  d->prev = NULL; /* Will be set later with mutex */
+  d->next = NULL;
+  d->off = 0;
+  d->pg_start = child.dir_f.pg_start;
+  d->start_blk = child.dir_f.start_blk;
+
+  /* Add to list of open dirs (Add mutex here later) */
+  /* TODO: Check if sb->d_end is NULL. */
+  d->prev = sb->d_end;
+  sb->d_end->next = d;
+  sb->d_end = d;
+
+  /* fdir */
+  fdir->dir.d = d;
+
+  return ret;
+
+errout_with_path:
+  kmm_free(d->path);
+
+errout_with_d:
+  kmm_free(d);
 
 errout:
   return ret;

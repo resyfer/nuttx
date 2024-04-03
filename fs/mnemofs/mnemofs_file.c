@@ -1,7 +1,7 @@
 #include "mnemofs.h"
 
 static uint32_t ptrs_lft(uint32_t blk);
-static void ctz_off2blk(off_t off, uint32_t *blk, uint32_t *blk_off);
+static void ctz_off2blk(struct mnemofs_sb_info *sb, off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off);
 static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, char *buf);
 static int __file_append(struct mnemofs_file *f, const char *buf, ssize_t len);
 
@@ -20,7 +20,7 @@ static uint32_t ptrs_lft(uint32_t blk) {
 /* Convert offset from the start of CTZ list to block number, and offset. */
 /* NOTE: The name CTZ blocks are used to preserve the terminology. In mnemofs,
 each CTZ block is infact just a page. */
-static void ctz_off2blk(off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off) {
+static void ctz_off2blk(struct mnemofs_sb_info *sb, off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off) {
 
   /* :::::::ERROR::::::: */
   /* The calculation in this funcion is no longer valid. A page is the smallest writable unit,
@@ -31,7 +31,7 @@ static void ctz_off2blk(off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off) {
   /* TODO: Input SB as a parameter */
   /* TODO: Testing */
 
-  const uint32_t pg_sz = mnemofs_sb.pg_sz;
+  const uint32_t pg_sz = sb->pg_sz;
   const uint32_t ptr_sz = 32; /* Taking 32 bit pointers in CTZ skip list. */
   uint32_t rem = 0;
   uint32_t blk_no = 0;
@@ -83,7 +83,7 @@ static int ctz_append_data(uint32_t *pg_start, uint32_t *start_blk, const char *
   return OK;
 }
 
-int __mnemofs_file_read(struct mnemofs_file *f, off_t off, char *buf, ssize_t len) {
+int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_t off, char *buf, ssize_t len) {
 
   /* TODO: Input SB as a parameter, not global */
 
@@ -95,7 +95,7 @@ int __mnemofs_file_read(struct mnemofs_file *f, off_t off, char *buf, ssize_t le
 
   /* :::::::ERROR::::::: */
   /* Check in the function */
-  ctz_off2blk(off, &ctz_blk, &pg_off);
+  ctz_off2blk(sb, off, &ctz_blk, &pg_off);
   /* :::::::ERROR::::::: */
 
   while(len > 0) {
