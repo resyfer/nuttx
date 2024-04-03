@@ -273,6 +273,7 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR 
 
   /* fdir */
   fdir->dir.d = d;
+  *dir = &fdir->base;
 
   return ret;
 
