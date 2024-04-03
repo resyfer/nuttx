@@ -1,9 +1,14 @@
+/**NOTE:::::::::::::: Each file page stores how many bytes are written in it in
+the first sb->log_pg_sz */
+
 #include "mnemofs.h"
 
 static uint32_t ptrs_lft(uint32_t blk);
 static void ctz_off2blk(struct mnemofs_sb_info *sb, off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off);
-static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, char *buf);
+static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, char *buf, off_t off, ssize_t len);
 static int __file_append(struct mnemofs_file *f, const char *buf, ssize_t len);
+
+#define FULL_CTZ_BLK -1
 
 /* Number of pointers in total on the CTZ blocks on left of the block number
 given, including the block. */
@@ -67,7 +72,8 @@ and if not, just calculate the length from (pg_sz - ptr_size * (log2(blk) + 1))*
 /* Assumes each CTZ block is a page on-flash. */
 /* pg_start is the page number of the last block of the CTZ list. */
 /* start_idx is the CTZ blk number of the last page (CTZ block) */
-static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, char *buf) {
+/* TODO: len is maxlen */
+static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, char *buf, off_t off, ssize_t len) {
   /* TODO */
   /* NOTE: Keep in mind not all of the page will be filled. Check the
   first 16 bits for the size written to the block.*/
@@ -77,15 +83,13 @@ static int ctz_read_blk(uint32_t pg_start, uint32_t start_blk, uint32_t blk, cha
 /* NOTE: This will be used for the on-flash update operation, which comes when
 journal is being committed to the flash. */
 static int ctz_append_data(uint32_t *pg_start, uint32_t *start_blk, const char *buf, ssize_t len) {
-
-  
-
   return OK;
 }
 
 int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_t off, char *buf, ssize_t len) {
 
   /* TODO: Input SB as a parameter, not global */
+  /* TODO: If len is FULL_CTZ_BLK, then read the entire page (CTZ block) from the offset. except the pointers. */
 
   uint32_t ctz_blk;
   uint32_t pg_off; /* ctz_blk_off and pg_off are same here */
@@ -99,7 +103,7 @@ int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_
   /* :::::::ERROR::::::: */
 
   while(len > 0) {
-    ret = ctz_read_blk(f->pg_start, f->start_blk, ctz_blk, buf);
+    ret = ctz_read_blk(f->pg_start, f->start_blk, ctz_blk, buf, 0, FULL_CTZ_BLK);
     if(ret < 0) {
       goto errout;
     }

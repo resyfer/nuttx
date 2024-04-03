@@ -11,11 +11,12 @@ enum DIR_SEARCH_ERR {
   DIR_SEARCH_INVALID_PARENT,
 };
 
+/* TODO: Think if it's necessary having path name. I mean, that's just the name of the directory, not the path.
+No use to anybody.*/
 struct mnemofs_fs_dirent {
   struct fs_dirent_s base;
-  struct {
-    struct mnemofs_dir *d;
-  } dir;
+
+  struct mnemofs_dir *dir;
 };
 
 #define FILE_END  -1
@@ -39,14 +40,15 @@ struct direntry_info {
 //   uint32_t start_pg; /* Page number of CTZ list start. For dir this is the start of their direntries, for files this is the file start */
 //   uint8_t  type;
 //   uint8_t namelen; /* Just the strlen */
-//   char name[namelen];
+//   char name[namelen]; /* Can be max NAME_MAX */
 // };
 #define DIRENT_PG_OFF 0
-#define DIRENT_START_PG 32
-#define DIRENT_TYPE_OFF 64
-#define DIRENT_NAMELEN_OFF  72
-#define DIRENT_NAME_OFF     90
-#define DIRENT_SIZE(namelen)   (DIRENT_NAME_OFF + (namelen)) /* TODO: Round off to nearest 4 byte boundary */
+#define DIRENT_START_PG 4
+#define DIRENT_TYPE_OFF 8
+#define DIRENT_NAMELEN_OFF  9
+#define DIRENT_NAME_OFF     10
+#define DIRENT_SIZE(namelen)   ((DIRENT_NAME_OFF) + (namelen)) /* TODO: Round off to nearest 4 byte boundary */
+#define DIRENT_MAX_SIZE   ((DIRENT_NAME_OFF) + (NAME_MAX)) /* TODO: Round off to nearest 4 byte boundary */
 
 static ssize_t find_name_len(FAR const char *path);
 static uint8_t calc_name_hash(FAR const char *path, ssize_t len);
@@ -100,7 +102,7 @@ static int search_direntries_r(struct direntry_info *parent, struct direntry_inf
   return DIR_SEARCH_OK;
 }
 
-int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
+int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
   /* TODO: Add sb as a parameter*/
 
   FAR const char *name = path;
@@ -109,6 +111,8 @@ int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t 
   struct direntry_info tmp;
   int ret = OK;
   char *buf = NULL;
+
+  /* TODO: Ensure size of the path is less than NAME_MAX */
 
   /* Root is cur_dir */
   /* TODO: Create a macro for this, or store in SB. */
@@ -213,7 +217,7 @@ UPDATED ANYWAY.
 
 
 SO ADD SIZE LATER.*/
-int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR struct fs_dirent_s **dir) {
+int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR struct fs_dirent_s **dir) {
 
   int ret = OK;
   struct mnemofs_dir *d;
@@ -244,9 +248,9 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR 
     goto errout;
   }
 
-  d->pathlen = pathlen;
-  d->path = kmm_zalloc(d->pathlen);
-  if(!d->path) {
+  d->namelen = pathlen;
+  d->name = kmm_zalloc(d->namelen);
+  if(!d->name) {
     ret = -ENOMEM;
     goto errout_with_d;
   }
@@ -258,7 +262,7 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR 
     goto errout_with_path;
   }
 
-  strncpy(d->path, relpath, d->pathlen);
+  strncpy(d->name, relpath, d->namelen);
   d->prev = NULL; /* Will be set later with mutex */
   d->next = NULL;
   d->off = 0;
@@ -266,23 +270,76 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb,  FAR const char *relpath, FAR 
   d->start_blk = child.dir_f.start_blk;
 
   /* Add to list of open dirs (Add mutex here later) */
-  /* TODO: Check if sb->d_end is NULL. */
+  /* TODO: Check if sb->d_end is NULL and add the head if necessary. */
   d->prev = sb->d_end;
   sb->d_end->next = d;
   sb->d_end = d;
 
+  /* TODO: Consider if path is required in dirent struct. */
+
   /* fdir */
-  fdir->dir.d = d;
-  *dir = &fdir->base;
+  fdir->dir = d;
+  *dir = (struct fs_dirent_s *) fdir;
 
   return ret;
 
 errout_with_path:
-  kmm_free(d->path);
+  kmm_free(d->name);
 
 errout_with_d:
   kmm_free(d);
 
 errout:
   return ret;
+}
+
+/* TODO: Check if SB is even required. */
+int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) {
+  struct mnemofs_fs_dirent *fdir;
+
+  fdir = (struct mnemofs_fs_dirent *) dir;
+
+  /* Mutex below */
+  /* TODO: Consider the possibility that this maybe the only dir open. */
+  fdir->dir->prev->next = fdir->dir->next;
+  fdir->dir->next->prev = fdir->dir->prev;
+
+  kmm_free(fdir->dir->name);
+  kmm_free(fdir->dir);
+  kmm_free(fdir);
+
+  return OK;
+}
+
+int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) {
+  ((struct mnemofs_fs_dirent *) dir)->dir->off = 0;
+  return 0;
+}
+
+int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry) {
+
+  struct mnemofs_fs_dirent *fdir = (struct mnemofs_fs_dirent *) dir;
+  ssize_t len;
+  char buf[DIRENT_NAME_OFF]; /* On-flash dir entry except name. */
+  uint8_t namelen;
+  uint8_t type;
+
+  /* Get the rest of the data first, then get the name from the namelen */
+  /* TODO: mnemofs_file && mnemofs_dir are same. Make it same. */
+  len = __mnemofs_file_read(sb, (struct mnemofs_file *) fdir->dir, fdir->dir->off, buf, DIRENT_NAME_OFF);
+
+  memcpy(&namelen, buf + DIRENT_NAMELEN_OFF, sizeof(namelen));
+  memcpy(&type, buf + DIRENT_TYPE_OFF, sizeof(type));
+  
+  len = __mnemofs_file_read(sb, (struct mnemofs_file *) fdir->dir, fdir->dir->off + DIRENT_NAME_OFF, entry->d_name, namelen);
+  /* TODO: We KNOW len == namelen, still, a debug assert to check.*/
+
+  /* TODO: Needs a mutex for read since this has side effects and modifies dir. */
+  fdir->dir->off += DIRENT_NAME_OFF + namelen;
+
+  entry->d_type = type;
+
+  /* TODO: Address the end-of-direntries case. */
+
+  return OK;
 }

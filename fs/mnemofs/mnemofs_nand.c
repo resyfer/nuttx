@@ -45,12 +45,28 @@
  * Public Data
  ****************************************************************************/
 
-int mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+/* Returns the length of the data read (incase it runs out of space) */
+ssize_t mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
   /* TODO */ /* Cache */
-  return OK;
+  return 0;
 };
 
-int mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
-  /* TODO */ /* TODO: Cache */
-  return OK;
+/* Size offset. Mention the size in the first sb->log_pg_sz bits of page*/
+/* Returns the length of the data read (incase it runs out of space) */
+ssize_t mnemofs_write_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+  /* TODO */ /* Internally use mnemofs_write_data */
+  return 0;
+};
+
+/* Returns the length of the data read (incase it runs out of space) */
+ssize_t mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+  /* TODO */ /* Cache */
+  return 0;
+};
+
+/* Size offset. Mention the size in the first sb->log_pg_sz bits of page */
+/* Returns the length of the data read (incase it runs out of space) */
+ssize_t mnemofs_read_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+  /* TODO */ /* Internally use mnemofs_write_data */
+  return 0;
 };

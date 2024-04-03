@@ -115,6 +115,7 @@ const struct mountpt_operations g_mnemofs_operations =
 static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
                         FAR void** handle)
 {
+  /* TODO: mountpt->i_private needs to have the sb_info */
   /* TODO */
   return OK;
 }
@@ -143,8 +144,7 @@ static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath)
 static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
                           mode_t mode)
 {
-  /* TODO: mountpt->i_private needs to have the sb_info */
-  return mnemofs_create_dir(MNEMOFS_SB(mountpt), relpath, mode);
+  return __mnemofs_mkdir(MNEMOFS_SB(mountpt), relpath, mode);
 }
 
 static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath)
@@ -179,21 +179,18 @@ static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 static int mnemofs_closedir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_closedir(MNEMOFS_SB(mountpt), dir);
 }
 
 static int mnemofs_readdir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir,
                             FAR struct dirent *entry)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_readdir(MNEMOFS_SB(mountpt), dir, entry);
 }
 
 static int mnemofs_rewinddir(FAR struct inode *mountpt,
                               FAR struct fs_dirent_s *dir)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_rewinddir(MNEMOFS_SB(mountpt), dir);
 }

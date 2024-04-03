@@ -50,6 +50,7 @@ struct direntry_info;
 
 struct mnemofs_sb_info {
   uint8_t pg_sz;
+  uint8_t log_pg_sz;
   uint8_t pg_in_blk;
   uint8_t log_pg_in_blk;
   uint8_t jrnl_blks;
@@ -65,17 +66,22 @@ struct mnemofs_sb_info {
 /* Open files */
 struct mnemofs_file {
   struct mnemofs_file *next;
+  struct mnemofs_file *prev; /* TODO: wherever next */
+  uint8_t namelen;
+  char *name;
   uint32_t pg_start; /* Page corresponding to the last CTZ block */
   uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
   ssize_t f_size; /* File size in bytes */
 };
 
 /* Open directory */
+
+/* TODO: Remove mnemofs_dir and just make it duplicate of mnemofs_file */
 struct mnemofs_dir {
   struct mnemofs_dir *prev;
   struct mnemofs_dir *next;
-  uint8_t pathlen;
-  char *path;
+  uint8_t namelen;
+  char *name;
   uint32_t pg_start; /* Page corresponding to the last CTZ block */
   uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
   ssize_t off; /* Current offset in bytes */
@@ -88,8 +94,10 @@ enum {
 
 /* mnemofs_nand.c */
 
-int mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
-int mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+ssize_t mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+ssize_t mnemofs_write_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+ssize_t mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+ssize_t mnemofs_read_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 
 /* mnemofs_blk_alloc.c */
 
@@ -120,9 +128,11 @@ uint8_t mnemofs_log2(uint32_t num);
 
 /* mnemofs_dir.c */
 
-int mnemofs_create_dir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode);
-
+int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode);
 int __mnemofs_opendir(struct mnemofs_sb_info *info,  FAR const char *relpath, FAR struct fs_dirent_s **dir);
+int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir);
+int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir);
+int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry);
 
 /* mnemofs_file.c */
 
