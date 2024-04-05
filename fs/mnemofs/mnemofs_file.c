@@ -103,7 +103,7 @@ int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_
   /* :::::::ERROR::::::: */
 
   while(len > 0) {
-    ret = ctz_read_blk(f->pg_start, f->start_blk, ctz_blk, buf, 0, FULL_CTZ_BLK);
+    ret = ctz_read_blk(f->start_pg, f->start_idx, ctz_blk, buf, 0, FULL_CTZ_BLK);
     if(ret < 0) {
       goto errout;
     }
@@ -120,7 +120,7 @@ errout:
 will be split from this, and this will just contain the coe to add a cache/journal
 entry for appending of file. */
 static int __file_append(struct mnemofs_file *f, const char *buf, ssize_t len) {
-  return ctz_append_data(&f->pg_start, &f->start_blk, buf, len);
+  return ctz_append_data(&f->start_pg, &f->start_idx, buf, len);
 }
 
 /* Enter off as f->f_size to append at end. */

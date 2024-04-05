@@ -56,35 +56,27 @@ struct mnemofs_sb_info {
   uint8_t jrnl_blks;
   uint32_t master_node;
   struct inode root_ino;
+  mutex_t f_lock;
   struct mnemofs_file *f_start;
   struct mnemofs_file *f_end;
-  struct mnemofs_dir *d_start;
-  struct mnemofs_dir *d_end;
+  mutex_t d_lock;
+  struct mnemofs_fs_dirent *d_start; /* Start of open dirs */
+  struct mnemofs_fs_dirent *d_end; /* End of open dirs */
   struct direntry_info *root; /* TODO: Initialize */
 };
 
-/* Open files */
-struct mnemofs_file {
-  struct mnemofs_file *next;
-  struct mnemofs_file *prev; /* TODO: wherever next */
-  uint8_t namelen;
-  char *name;
-  uint32_t pg_start; /* Page corresponding to the last CTZ block */
-  uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
-  ssize_t f_size; /* File size in bytes */
-};
-
-/* Open directory */
+/* Open files & Directories */
 
 /* TODO: Remove mnemofs_dir and just make it duplicate of mnemofs_file */
-struct mnemofs_dir {
-  struct mnemofs_dir *prev;
-  struct mnemofs_dir *next;
+struct mnemofs_file {
+  struct mnemofs_file *prev;
+  struct mnemofs_file *next;
   uint8_t namelen;
   char *name;
-  uint32_t pg_start; /* Page corresponding to the last CTZ block */
-  uint32_t start_blk; /* CTZ Blk Number (ie. index) of the last blk */
+  uint32_t start_pg; /* Page corresponding to the last CTZ block */
+  uint32_t start_idx; /* CTZ index (ie. block number) of the last blk */
   ssize_t off; /* Current offset in bytes */
+  ssize_t size;
 };
 
 enum {

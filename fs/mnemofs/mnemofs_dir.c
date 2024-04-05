@@ -5,21 +5,30 @@
 
 #include "mnemofs.h"
 
-enum DIR_SEARCH_ERR {
-  DIR_SEARCH_OK,
-  DIR_SEARCH_NOT_FOUND,
-  DIR_SEARCH_INVALID_PARENT,
+enum MNEMOFS_DIR_SEARCH_ERR {
+  MNEMOFS_DIR_SEARCH_OK,
+  MNEMOFS_DIR_SEARCH_NOT_FOUND,
+  MNEMOFS_DIR_SEARCH_INVALID_PARENT,
 };
 
-/* TODO: Think if it's necessary having path name. I mean, that's just the name of the directory, not the path.
-No use to anybody.*/
+enum MNEMOFS_READDIR {
+  MNEMOFS_READDIR_SELF = -2,
+  MNEMOFS_READDIR_PARENT = -1,
+  MNEMOFS_READDIR_CHILDREN = 0, /* >= 0 */
+};
+
 struct mnemofs_fs_dirent {
-  struct fs_dirent_s base;
-
-  struct mnemofs_dir *dir;
+  struct fs_dirent_s base; /* Start is kept same for VFS */
+  struct mnemofs_fs_dirent *prev; /* Previous entry in doubly linked list.*/
+  struct mnemofs_fs_dirent *next; /* Next entry in doubly linked list.*/
+  off_t off; /* Offset of the file. */
+  uint32_t start_pg; /* Last CTZ block (CTZ start) page number. */
+  uint32_t start_idx; /* Last CTZ block (CTZ start) index. */
+  /* Grouping the below and up together for caches.*/
+  uint8_t hash; /* pathlen hash for the same reason as direntries have it, for search for when if dir is busy or not while open. */
+  uint32_t pathlen; 
+  char *path; /* Entire relpath to dir from mount */
 };
-
-#define FILE_END  -1
 
 /* Direntry in memory */
 struct direntry_info {
@@ -93,13 +102,13 @@ static int search_direntries(struct direntry_info *parent, struct direntry_info 
 
   /* Use calc_name_hash & strcmp for hash collisions */
   memcpy(parent, &ret, sizeof(ret));
-  return DIR_SEARCH_OK;
+  return MNEMOFS_DIR_SEARCH_OK;
 }
 
 /* Recursive search (Iterative) */
 /* TODO: Error system like 0 - Found an entry, 1 - No entry at that location, 2 - Parent not found (ie. search stopped midway) */
 static int search_direntries_r(struct direntry_info *parent, struct direntry_info *child, FAR const char *path, ssize_t pathlen) {
-  return DIR_SEARCH_OK;
+  return MNEMOFS_DIR_SEARCH_OK;
 }
 
 int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
@@ -174,9 +183,9 @@ int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mod
   /* TODO: Journal, when writing direntry changes, will write them like files. */
 
   /* Save the on-flash direntry representation to parent directory. */
-  tmp.dir_f.f_size = 0;
-  tmp.dir_f.pg_start = 0; /* TODO: ENUM for empty file for start */
-  tmp.dir_f.start_blk = -1; /* TODO: Empty CTZ list enum */
+  tmp.dir_f.size = 0;
+  tmp.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
+  tmp.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
 
   buf = kmm_zalloc(DIRENT_SIZE(tmp.namelen));
   if(!buf) {
@@ -189,14 +198,14 @@ int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mod
   but they signify an empty directory. */
   const uint8_t type = MNEMOFS_DIR;
 
-  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.pg_start, sizeof(tmp.dir_f.pg_start));
-  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.start_blk, sizeof(tmp.dir_f.start_blk));
+  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.start_pg, sizeof(tmp.dir_f.start_pg));
+  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.start_idx, sizeof(tmp.dir_f.start_idx));
   memcpy(buf + DIRENT_TYPE_OFF, &type, sizeof(type));
   memcpy(buf + DIRENT_NAMELEN_OFF, &tmp.namelen, sizeof(tmp.namelen));
   memcpy(buf + DIRENT_NAME_OFF, tmp.name, namelen);
 
   /* Insert at end */
-  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), tmp.dir_f.f_size);
+  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), tmp.dir_f.size);
   if(ret < 0) {
     goto errout_with_buf;
   }
@@ -210,30 +219,75 @@ errout:
 
 //---------------------------------
 
-/* TODO: THER IS INCONSISTENT DEPICTION OF DIR GOING ON. THIS IS STEMMING FROM EITHER REQUIRING SIZE OF THE DIRECTORY ENTRY FILE,
-OR NOT REQUIRING IT. NEED TO THINK ABOUT THIS WELL. KEEPING A SIZE FOR DIR WOULD MEAN UPDATING THE PARENT'S DIRENTRY EVERYTIME THERE
-IS AN ADDITION. BUT THIS WOULD ALSO BE A USUAL CASE AS ANY ADDITION MOVES THE LAST BLOCK OF THE CTZ, AND THUS THE PARENT NEEDS TO BE
-UPDATED ANYWAY.
+// 0 - Not found, 1 - Found
+int search_open_dirs(struct mnemofs_sb_info *sb, FAR const char *relpath) {
+
+  uint8_t hash;
+  struct mnemofs_fs_dirent *head;
+  int ret = 0;
+  int lock = 0;
+
+  if(!sb->d_start) {
+    goto out;
+  }
+
+  hash = calc_name_hash(relpath, strlen(relpath));
+
+  /* Only lock and unlock if we're the ones locking this, not the parent function. */
+  if(!nxmutex_is_locked(&sb->d_lock)) {
+    nxmutex_lock(&sb->d_lock);
+    lock = 1;
+  }
 
 
-SO ADD SIZE LATER.*/
+  for(head = sb->d_start; head != sb->d_end; head = head->next) {
+    if(head->hash == hash) {
+      /* Hash collision */
+      if(!strncmp(relpath, head->path, head->pathlen)) {
+        /* Found the path */
+        ret = 1;
+        goto out_with_lock;
+      }
+    }
+  }
+
+out_with_lock:
+  if(lock) {
+    nxmutex_unlock(&sb->d_lock);
+  }
+
+out:
+  return ret;
+}
+
 int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR struct fs_dirent_s **dir) {
 
   int ret = OK;
-  struct mnemofs_dir *d;
   struct direntry_info parent, child;
-  unsigned long pathlen;
+  const unsigned long pathlen = strlen(relpath);
   struct mnemofs_fs_dirent *fdir;
 
-  pathlen = strlen(relpath);
+  /* Get fdir mem */
+  /* Since malloc is costly if held up by a lock, we will malloc here,
+  even if it means using a free for incorrect cases. */
+
+  fdir = kmm_zalloc(sizeof(*fdir));
+  if(!fdir) {
+    ret = -ENOMEM;
+    goto errout;
+  }
 
   /* Check Directory */
+
+  /* Mutex here instead of later as there might be a case where the
+  directory tree changes after search.*/
+
+  nxmutex_lock(&sb->d_lock);
+
   ret = search_direntries_r(&parent, &child, relpath, pathlen);
-  if(ret == DIR_SEARCH_INVALID_PARENT) {
+  if(ret != MNEMOFS_DIR_SEARCH_OK) {
     ret = -ENOENT;
-    goto errout;
-  } else if (ret == DIR_SEARCH_NOT_FOUND) {
-    ret = -ENOENT;
+    goto errout_with_lock;
   }
 
   if(!S_ISDIR(child.mode)) {
@@ -241,53 +295,52 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR s
     goto errout;
   }
 
-  /* We have directory, open it */
-  d = kmm_zalloc(sizeof(*d));
-  if(!d) {
+  /* We have the directory now. */
+
+  fdir->pathlen = pathlen;
+  fdir->path = kmm_zalloc(pathlen);
+  if(!fdir->path) {
     ret = -ENOMEM;
-    goto errout;
+    goto errout_with_lock;
   }
 
-  d->namelen = pathlen;
-  d->name = kmm_zalloc(d->namelen);
-  if(!d->name) {
-    ret = -ENOMEM;
-    goto errout_with_d;
+  /* Turns out you don't need to check if a directory is already open:
+    https://stackoverflow.com/a/1743037/14369307
+  */
+  fdir->prev = NULL; /* Will be set later with mutex */
+  fdir->next = NULL;
+  fdir->off = MNEMOFS_READDIR_SELF; /* -2 for . && -1 for .. && then the actual offset starts for reads. */
+  fdir->start_pg = child.dir_f.start_pg;
+  fdir->start_idx = child.dir_f.start_idx;
+  /* We can attach these last two values here instead of a direntry without the
+  fear of maintaining multiple sources of truth, as any change to this directory will
+  not be allowed if it is open. */
+
+  /* Append at end of list of open dirs */
+
+  if(sb->d_end == NULL /* && sb->d_start == NULL */) {
+    sb->d_start = fdir;
+    sb->d_end = fdir;
+  } else {
+    sb->d_end->next = fdir;
+    fdir->prev = sb->d_end;
+    sb->d_end = fdir;
   }
-
-  /* Get fdir mem */
-  fdir = kmm_zalloc(sizeof(*fdir));
-  if(!fdir) {
-    ret = -ENOMEM;
-    goto errout_with_path;
-  }
-
-  strncpy(d->name, relpath, d->namelen);
-  d->prev = NULL; /* Will be set later with mutex */
-  d->next = NULL;
-  d->off = 0;
-  d->pg_start = child.dir_f.pg_start;
-  d->start_blk = child.dir_f.start_blk;
-
-  /* Add to list of open dirs (Add mutex here later) */
-  /* TODO: Check if sb->d_end is NULL and add the head if necessary. */
-  d->prev = sb->d_end;
-  sb->d_end->next = d;
-  sb->d_end = d;
-
-  /* TODO: Consider if path is required in dirent struct. */
 
   /* fdir */
-  fdir->dir = d;
   *dir = (struct fs_dirent_s *) fdir;
 
-  return ret;
+  nxmutex_unlock(&sb->d_lock);
+  return OK;
 
-errout_with_path:
-  kmm_free(d->name);
+// errout_with_path:
+//   kmm_free(fdir->path);
 
-errout_with_d:
-  kmm_free(d);
+errout_with_lock:
+  nxmutex_unlock(&sb->d_lock);
+
+// errout_with_fdir:
+  kmm_free(fdir);
 
 errout:
   return ret;
@@ -299,20 +352,40 @@ int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) 
 
   fdir = (struct mnemofs_fs_dirent *) dir;
 
-  /* Mutex below */
-  /* TODO: Consider the possibility that this maybe the only dir open. */
-  fdir->dir->prev->next = fdir->dir->next;
-  fdir->dir->next->prev = fdir->dir->prev;
+  nxmutex_lock(&sb->d_lock);
 
-  kmm_free(fdir->dir->name);
-  kmm_free(fdir->dir);
+  /* TODO: Debug assert to check if dir is not NULL */
+
+  if(sb->d_start == fdir && sb->d_end == fdir /* && fdir->prev == NULL && fdir->next == NULL */) {
+    sb->d_start = NULL;
+    sb->d_end = NULL;
+  } else {
+
+    /* Taking care of terminal nodes preculiarities. */
+    if (sb->d_start == fdir) {
+      sb->d_start = fdir->next;
+    } else if (sb->d_end == fdir) {
+      sb->d_end = fdir->prev;
+    }
+
+    fdir->prev->next = fdir->next;
+    fdir->next->prev = fdir->prev;
+  }
+
+  nxmutex_unlock(&sb->d_lock);
+
+  kmm_free(fdir->path);
   kmm_free(fdir);
 
   return OK;
 }
 
 int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) {
-  ((struct mnemofs_fs_dirent *) dir)->dir->off = 0;
+  nxmutex_lock(&sb->d_lock);
+
+  ((struct mnemofs_fs_dirent *) dir)->off = MNEMOFS_READDIR_SELF;
+
+  nxmutex_unlock(&sb->d_lock);
   return 0;
 }
 
@@ -323,23 +396,59 @@ int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, F
   char buf[DIRENT_NAME_OFF]; /* On-flash dir entry except name. */
   uint8_t namelen;
   uint8_t type;
+  struct mnemofs_file df;
+  int ret = OK;
 
-  /* Get the rest of the data first, then get the name from the namelen */
-  /* TODO: mnemofs_file && mnemofs_dir are same. Make it same. */
-  len = __mnemofs_file_read(sb, (struct mnemofs_file *) fdir->dir, fdir->dir->off, buf, DIRENT_NAME_OFF);
+  nxmutex_lock(&sb->d_lock);
+
+  /* The first two cases are  . && .. */
+  if(fdir->off == MNEMOFS_READDIR_SELF) {
+    memcpy(entry->d_name, ".", 2);
+    fdir->off++;
+    goto errout_with_lock;
+  } else if(fdir->off == MNEMOFS_READDIR_PARENT) {
+    memcpy(entry->d_name, "..", 3);
+    fdir->off++;
+    goto errout_with_lock;
+  }
+
+  /* Initialize only the useful df fields. */
+  /* TODO: Ensure size is not required here. */
+  df.off = fdir->off;
+  df.start_pg = fdir->start_pg;
+  df.start_idx = fdir->start_idx;
+
+  /* Get the rest of the data first, then get the name from the namelen. This would make
+  us read twice, but NAND flash sequential reads are pretty fast. Since this is under a lock,
+  this will most likely be a sequential read, unless a journal write happens in this time. */
+  /* TODO: A lock for during journal writes. We only want to perform operations before or after
+  it. */
+
+  len = __mnemofs_file_read(sb, &df, df.off, buf, DIRENT_NAME_OFF);
+  if(len < 0) {
+    /* No more direntries remaining. */
+    goto errout_with_lock;
+  }
 
   memcpy(&namelen, buf + DIRENT_NAMELEN_OFF, sizeof(namelen));
   memcpy(&type, buf + DIRENT_TYPE_OFF, sizeof(type));
   
-  len = __mnemofs_file_read(sb, (struct mnemofs_file *) fdir->dir, fdir->dir->off + DIRENT_NAME_OFF, entry->d_name, namelen);
+  len = __mnemofs_file_read(sb, &df, df.off + DIRENT_NAME_OFF, entry->d_name, namelen);
+  if(len < 0) {
+    /* No more direntries remaining. */
+    goto errout_with_lock;
+  }
+
   /* TODO: We KNOW len == namelen, still, a debug assert to check.*/
 
-  /* TODO: Needs a mutex for read since this has side effects and modifies dir. */
-  fdir->dir->off += DIRENT_NAME_OFF + namelen;
+  fdir->off += DIRENT_NAME_OFF + namelen;
 
   entry->d_type = type;
 
   /* TODO: Address the end-of-direntries case. */
 
-  return OK;
+errout_with_lock:
+  nxmutex_unlock(&sb->d_lock);
+
+  return ret;
 }
