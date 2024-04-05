@@ -107,3 +107,10 @@ This is useful especially for master nodes and journal nodes. */
 int mnemofs_blk_mark_full(uint32_t blk) {
   return OK;
 }
+
+/* Mark page for deletion */
+/* TODO: Implementation */
+/* TODO: Mutex */
+int mnemofs_pg_dlt(uint32_t pg) {
+  return OK;
+}

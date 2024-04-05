@@ -34,11 +34,11 @@ struct mnemofs_fs_dirent {
 struct direntry_info {
   uint8_t hash;
   FAR const char *parent_path; /* Maybe NULL for ROOT */
-  ssize_t parent_pathlen;
+  ssize_t parent_pathlen; /* TODO: This is supposed to be the entire path till parent. Contemplate if it is required or not. */
   FAR const char *name;
   ssize_t namelen;
   uint32_t pg;
-  off_t off; /* TODO: This will be set after journal is written. */
+  off_t off; /* TODO: This will be set after journal is written. This is offset of this dirent in its parent's dirent file, */
   mode_t mode;
   struct mnemofs_file dir_f; /* Directory file */
 };
@@ -59,13 +59,13 @@ struct direntry_info {
 #define DIRENT_SIZE(namelen)   ((DIRENT_NAME_OFF) + (namelen)) /* TODO: Round off to nearest 4 byte boundary */
 #define DIRENT_MAX_SIZE   ((DIRENT_NAME_OFF) + (NAME_MAX)) /* TODO: Round off to nearest 4 byte boundary */
 
-static ssize_t find_name_len(FAR const char *path);
+static ssize_t get_cur_name_len(FAR const char *path);
 static uint8_t calc_name_hash(FAR const char *path, ssize_t len);
 static int search_direntries(struct direntry_info *parent, struct direntry_info *child, FAR const char *name, ssize_t namelen);
 static int search_direntries_r(struct direntry_info *parent, struct direntry_info *child, FAR const char *path, ssize_t pathlen);
 
-/* Like strtok, but does not change string. */
-static ssize_t find_name_len(FAR const char *path) {
+/* Like strtok, but does not change string. Gives the name till the next '\' or '\0' */
+static ssize_t get_cur_name_len(FAR const char *path) {
   int i;
   for(i = 0; path[i] != 0 && path[i] != '/'; i++);
   return i;
@@ -86,8 +86,10 @@ static uint8_t calc_name_hash(FAR const char *path, ssize_t len) {
   return hash % (1 << 8);
 }
 
+/* TODO: Special case for . and .. */
 /* Denotes the pg and off as 0 if error. */
 /* Only searches immediate child */
+/* TODO: Error system like 0 - Found an entry, 1 - No entry at that location, 2 - Parent not found (ie. search stopped midway) */
 static int search_direntries(struct direntry_info *parent, struct direntry_info *child, FAR const char *name, ssize_t namelen) {
   struct direntry_info ret = {0};
 
@@ -100,121 +102,19 @@ static int search_direntries(struct direntry_info *parent, struct direntry_info 
 
   /* TODO: Implement files, use inner implementation function to read the file data */
 
+  /* TODO: child.off has to be added HERE. This refers to the offset in the direntry file. */
+
   /* Use calc_name_hash & strcmp for hash collisions */
   memcpy(parent, &ret, sizeof(ret));
   return MNEMOFS_DIR_SEARCH_OK;
 }
 
+/* TODO: Special case for . and .. */
 /* Recursive search (Iterative) */
 /* TODO: Error system like 0 - Found an entry, 1 - No entry at that location, 2 - Parent not found (ie. search stopped midway) */
+/* If a file or directory is asked, and it is found, put it in child, corresponding to the last iteration of the directory tree. */
 static int search_direntries_r(struct direntry_info *parent, struct direntry_info *child, FAR const char *path, ssize_t pathlen) {
   return MNEMOFS_DIR_SEARCH_OK;
-}
-
-int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
-  /* TODO: Add sb as a parameter*/
-
-  FAR const char *name = path;
-  ssize_t namelen = -1; /* It is set to -1 for the first pass */
-  struct direntry_info cur_dir;
-  struct direntry_info tmp;
-  int ret = OK;
-  char *buf = NULL;
-
-  /* TODO: Ensure size of the path is less than NAME_MAX */
-
-  /* Root is cur_dir */
-  /* TODO: Create a macro for this, or store in SB. */
-  /* TODO: Initialize this in SB */
-  // cur_dir.hash = calc_name_hash("/", 1); /* TODO: check if `path` contains `/` in first character */
-  // cur_dir.name = "/";
-  // cur_dir.namelen = 1;
-  // cur_dir.pg = sb->master_node;
-  // cur_dir.off = 0;
-  // cur_dir.parent_path = NULL;
-  // cur_dir.parent_pathlen = 0;
-  // cur_dir.mode = 0777; /* TOD: verify root's mode. */
-
-  memcpy(&cur_dir, sb->root, sizeof(cur_dir));
-
-  while(1) {
-
-    /* TODO: we know this should not fail, but MAYBE. So debug assert. */
-    if(*(name + namelen) == '\0') {
-      /* Exact match found */
-      ret = -EEXIST;
-      goto errout;
-    }
-
-    /* TODO: Support links and redirection */
-    if(!S_ISDIR(cur_dir.mode)) {
-      ret = -ENOTDIR;
-      goto errout;
-    }
-
-    name = name + namelen + 1;
-    namelen = find_name_len(name);
-    ret = search_direntries(&cur_dir, &tmp, name, namelen);
-    /* TODO: Check for return values. */
-    if(tmp.pg == 0 && tmp.off == 0) {
-      /* Not found, so we're good, and move on to creating it. */
-      /* TODO: WARNING: This point might not be the final directory path
-      we want. This might be a parent in the path that has not been created
-      yet. */
-      break;
-    }
-
-    cur_dir = tmp;
-  }
-
-  /* NOTE: There doesn't seem to be any function that allocated inode
-  numbers? Or does it even look like inodes are required here. */
-
-  /* cur_dir has the parent under which directory is supposed to be created. */
-
-  /* tmp.hash: Already done by search_direntries */
-  tmp.mode = mode;
-  /* tmp.name: Already done by search_direntries */
-  /* tmp.off: To be created when journal is written. */
-  /* tmp.parent_path: Already done by search_direntries */
-  /* tmp.parent_pathlen: Already done by search_direntries */
-
-  /* TODO: Add a directory entry save log in journal */
-  /* TODO: Journal, when writing direntry changes, will write them like files. */
-
-  /* Save the on-flash direntry representation to parent directory. */
-  tmp.dir_f.size = 0;
-  tmp.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
-  tmp.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
-
-  buf = kmm_zalloc(DIRENT_SIZE(tmp.namelen));
-  if(!buf) {
-    ret = -ENOMEM;
-    goto errout;
-  }
-
-  /* TODO: Think about endiannes */
-  /* This is for the child. The values written in it for now are garbage,
-  but they signify an empty directory. */
-  const uint8_t type = MNEMOFS_DIR;
-
-  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.start_pg, sizeof(tmp.dir_f.start_pg));
-  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.start_idx, sizeof(tmp.dir_f.start_idx));
-  memcpy(buf + DIRENT_TYPE_OFF, &type, sizeof(type));
-  memcpy(buf + DIRENT_NAMELEN_OFF, &tmp.namelen, sizeof(tmp.namelen));
-  memcpy(buf + DIRENT_NAME_OFF, tmp.name, namelen);
-
-  /* Insert at end */
-  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), tmp.dir_f.size);
-  if(ret < 0) {
-    goto errout_with_buf;
-  }
-
-errout_with_buf:
-  kmm_free(buf);
-
-errout:
-  return ret;
 }
 
 //---------------------------------
@@ -288,6 +188,8 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR s
   if(ret != MNEMOFS_DIR_SEARCH_OK) {
     ret = -ENOENT;
     goto errout_with_lock;
+  } else {
+    ret = OK;
   }
 
   if(!S_ISDIR(child.mode)) {
@@ -446,6 +348,303 @@ int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, F
   entry->d_type = type;
 
   /* TODO: Address the end-of-direntries case. */
+
+errout_with_lock:
+  nxmutex_unlock(&sb->d_lock);
+
+  return ret;
+}
+
+//----------------------------------------------------------------------------
+
+/* Path Ops */
+
+/* This waits for the delete, which is probably not what UNIX wanted.
+UNIX meant to unlink the file, and the file is later removed,
+presumably when no other processes are using it. */
+/* TODO: If a directory becomes empty (apart from . and ..), then set the
+directory's dirent_info.pg to 0 to denote an empty directory. */
+int __mnemofs_unlink(FAR struct mnemofs_sb_info *sb, FAR const char *relpath) {
+  struct direntry_info parent, child;
+  const int pathlen = strlen(relpath);
+  int ret = OK;
+
+  /* TODO: This lock only prevents for directory changes. Think if it was a file.
+  Probably needs a mutex for path related ops, or something like that or multiple
+  locks.*/
+  nxmutex_lock(&sb->d_lock);
+
+  ret = search_open_dirs(sb, relpath);
+  if(ret) {
+    ret = -EBUSY;
+    goto errout_with_lock;
+  } else {
+    ret = OK;
+  }
+
+  memcpy(&parent, sb->root, sizeof(parent));
+  ret = search_direntries_r(&parent, &child, relpath, pathlen);
+  if(ret != MNEMOFS_DIR_SEARCH_OK) {
+    ret = -ENOENT;
+    goto errout_with_lock;
+  } else {
+    ret = OK;
+  }
+
+  /* TODO: Check if unlink functions actually return this. */
+  if(S_ISDIR(child.mode)) {
+    ret = -EISDIR;
+    goto errout_with_lock;
+  }
+
+  /* TODO: Here we have `child` being a file. Search the open files,
+  and/or use a mutex or semaphore in the file's open structure.*/
+
+errout_with_lock:
+  nxmutex_unlock(&sb->d_lock);
+
+  return ret;
+}
+
+/* TODO: HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1 */
+int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
+
+  FAR const char *name = path;
+  ssize_t namelen = -1; /* It is set to -1 for the first pass */
+  struct direntry_info cur_dir;
+  struct direntry_info tmp;
+  int ret = OK;
+  char *buf = NULL;
+
+  /* TODO: Ensure size of the path is less than NAME_MAX */
+
+  /* Root is cur_dir */
+  /* TODO: Create a macro for this, or store in SB. */
+  /* TODO: Initialize this in SB */
+  // cur_dir.hash = calc_name_hash("/", 1); /* TODO: check if `path` contains `/` in first character */
+  // cur_dir.name = "/";
+  // cur_dir.namelen = 1;
+  // cur_dir.pg = sb->master_node;
+  // cur_dir.off = 0;
+  // cur_dir.parent_path = NULL;
+  // cur_dir.parent_pathlen = 0;
+  // cur_dir.mode = 0777; /* TODO: verify root's mode. */
+
+  memcpy(&cur_dir, sb->root, sizeof(cur_dir));
+
+  while(1) {
+
+    /* TODO: we know this should not fall out of bounds, but MAYBE. So debug assert. */
+    if(*(name + namelen) == '\0') {
+      /* Exact match found */
+      ret = -EEXIST;
+      goto errout;
+    }
+
+    /* FUTURE TODO: Support links and redirection.*/
+    if(!S_ISDIR(cur_dir.mode)) {
+      ret = -ENOTDIR;
+      goto errout;
+    }
+
+    name += namelen + 1; /* +1 is for skipping the '\'. Since we've reached this
+    point, we know the string does not end on name + namelen + 1, but rather also has
+    atleast 1 file system object after it.*/
+    namelen = get_cur_name_len(name);
+    ret = search_direntries(&cur_dir, &tmp, name, namelen);
+
+    if(ret == MNEMOFS_DIR_SEARCH_NOT_FOUND) {
+      /* Not found, so we're good, and move on to creating it. */
+      ret = OK;
+      break;
+    } else if (ret == MNEMOFS_DIR_SEARCH_OK) {
+      /* Found a file system object at that path. */
+      ret = -EEXIST;
+      goto errout;
+    } else /* if (ret == MNEMOFS_DIR_SEARCH_INVALID_PARENT) */ {
+      /* One of the parents does not exist in the path. */
+      ret = -ENOENT;
+      goto errout;
+    }
+
+    memcpy(&cur_dir, &tmp, sizeof(tmp));
+  }
+
+  /* NOTE: There doesn't seem to be any function that allocated inode
+  numbers? Or does it even look like inodes are required here. */
+
+  /* cur_dir has the parent under which directory is supposed to be created. */
+
+  /* tmp.hash: Already done by search_direntries */
+  tmp.mode = mode;
+  /* tmp.name: Already done by search_direntries */
+  /* tmp.off: To be created when journal is written. */
+  /* tmp.parent_path: Already done by search_direntries */
+  /* tmp.parent_pathlen: Already done by search_direntries */
+
+  /* TODO: Add a directory entry save log in journal */
+  /* TODO: Journal, when writing direntry changes, will write them like files. */
+
+  /* Save the on-flash direntry representation to parent directory. */
+  tmp.dir_f.size = 0;
+  tmp.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
+  tmp.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
+
+  buf = kmm_zalloc(DIRENT_SIZE(tmp.namelen));
+  if(!buf) {
+    ret = -ENOMEM;
+    goto errout;
+  }
+
+  /* TODO: Think about endiannes */
+  /* This is for the child. The values written in it for now are garbage,
+  but they signify an empty directory. */
+  const uint8_t type = MNEMOFS_DIR;
+
+  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.start_pg, sizeof(tmp.dir_f.start_pg));
+  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.start_idx, sizeof(tmp.dir_f.start_idx));
+  memcpy(buf + DIRENT_TYPE_OFF, &type, sizeof(type));
+  memcpy(buf + DIRENT_NAMELEN_OFF, &tmp.namelen, sizeof(tmp.namelen));
+  memcpy(buf + DIRENT_NAME_OFF, tmp.name, namelen);
+
+  /* Insert at end */
+  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.namelen), tmp.dir_f.size);
+  if(ret < 0) {
+    goto errout_with_buf;
+  }
+
+errout_with_buf:
+  kmm_free(buf);
+
+errout:
+  return ret;
+}
+
+int __mnemofs_rmdir(struct mnemofs_sb_info *sb, FAR const char *relpath) {
+
+  /* TODO: Look for the EINVAL condition from the man page. */
+
+  int ret = OK;
+  struct direntry_info parent, child;
+  const int pathlen = strlen(relpath);
+
+  nxmutex_lock(&sb->d_lock);
+
+  memcpy(&parent, sb->root, sizeof(parent));
+
+  ret = search_open_dirs(sb, relpath);
+  if(ret) {
+    ret = -EBUSY;
+    goto errout_with_lock;
+  }
+
+  ret = search_direntries_r(&parent, &child, relpath, pathlen);
+  if(ret != MNEMOFS_DIR_SEARCH_OK) {
+    ret = -ENOENT;
+    goto errout_with_lock;
+  } else {
+    ret = OK;
+  }
+
+  if(!S_ISDIR(child.mode)) {
+    ret = -ENOTDIR;
+    goto errout_with_lock;
+  }
+
+  if(child.pg != 0 /* && child.off != 0 */) {
+    ret = -ENOTEMPTY;
+    goto errout_with_lock;
+  }
+
+  /* TODO: Make the DIRENT_NAME_OFF + child.namelen into a macro. */
+  /* Insert into parent's direntry file */
+  ret = __mnemofs_file_delete(&parent.dir_f, child.off, DIRENT_NAME_OFF + child.namelen);
+  if(ret) {
+    goto errout_with_lock;
+  }
+
+errout_with_lock:
+  nxmutex_unlock(&sb->d_lock);
+
+  return ret;
+}
+
+/* Move File. */
+int __mnemofs_mv(struct mnemofs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath) {
+
+  struct direntry_info old_parent, old_child, new_parent, new_child;
+  int ret = OK;
+  const int oldpathlen = strlen(oldrelpath);
+  const int newpathlen = strlen(newrelpath);
+  int is_dir = 0;
+
+  /* TODO: Imp from man page:
+    - Newpath gets replaced even if it exists.
+      Solution: Flag by default is RENAME_NOREPLACE, so -EEXIST if already exists.
+    - Directory change needs to be reflected in its parentpath, etc.
+  */
+
+  /* TODO: Again lock is only for dir */
+  nxmutex_lock(&sb->d_lock);
+
+  /* Old */
+  memcpy(&old_parent, sb->root, sizeof(old_parent));
+  ret = search_direntries_r(&old_parent, &old_child, oldrelpath, oldpathlen);
+  if(ret != MNEMOFS_DIR_SEARCH_OK) {
+    ret = -ENOENT; /* TODO: Confirm that if path cannot be reached, ie. parent is not available, this is the same error.*/
+    goto errout_with_lock;
+  } else {
+    ret = OK;
+  }
+
+  if(S_ISDIR(old_child.mode)) {
+    is_dir = 1; /* Special case. */
+  }
+
+  /* New */
+  memcpy(&new_parent, sb->root, sizeof(new_parent));
+  ret = search_direntries_r(&new_parent, &new_child, newrelpath, newpathlen);
+  /*
+    Problem: POSIX says newpath gets replaced even if it exists.
+    Solution: Flag by default is RENAME_NOREPLACE, so -EEXIST if already exists.
+
+    TODO: Check other implementations. Or else it will be a long code.
+  */
+  if(ret != MNEMOFS_DIR_SEARCH_OK) {
+    ret = -EEXIST;
+    goto errout_with_lock;
+  } else {
+    ret = OK;
+  }
+
+  /* Insert new entry */
+  /* new_child.hash: Already done by search_direntries */
+  new_child.mode = old_child.mode;
+  /* new_child.name: Already done by search_direntries */
+  /* new_child.off: To be created when journal is written. */
+  /* new_child.parent_path: Already done by search_direntries */
+  /* new_child.parent_pathlen: Already done by search_direntries */
+
+  /* Save the on-flash direntry representation to parent directory. */
+  new_child.dir_f.size = 0;
+  new_child.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
+  new_child.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
+  /* These upper entries are same as in __mnemofs_mkdir */
+
+  ret = __mnemofs_file_insert(&new_parent.dir_f, (const char *) &new_child, DIRENT_NAME_OFF + new_child.namelen, new_parent.dir_f.off);
+  if(ret < 0) {
+    goto errout_with_lock;
+  }
+
+  /* Delete from old parent's direntry file.*/
+  ret =  __mnemofs_file_delete(&old_parent.dir_f, old_child.off, DIRENT_NAME_OFF + old_child.namelen);
+  if(ret < 0) {
+    goto errout_with_lock;
+    /* TODO: Error condition to reverse the previous insert. The only problem is, this function will be effectively
+    just adding a log in the journal. This would mean the journal will have to have a new entry that creates a new
+    directory in the same place. */
+  }
+
 
 errout_with_lock:
   nxmutex_unlock(&sb->d_lock);

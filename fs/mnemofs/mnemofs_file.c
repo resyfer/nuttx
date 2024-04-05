@@ -28,9 +28,7 @@ each CTZ block is infact just a page. */
 static void ctz_off2blk(struct mnemofs_sb_info *sb, off_t off, uint32_t *ctz_blk, uint32_t *ctz_blk_off) {
 
   /* :::::::ERROR::::::: */
-  /* The calculation in this funcion is no longer valid. A page is the smallest writable unit,
-  and it may be that not all of the page is written. Thus, there needs to be
-  16 bits at start to denote how much of it is already written. */
+  /* Update to the latest representation. */
   /* :::::::ERROR::::::: */
 
   /* TODO: Input SB as a parameter */
@@ -124,11 +122,12 @@ static int __file_append(struct mnemofs_file *f, const char *buf, ssize_t len) {
 }
 
 /* Enter off as f->f_size to append at end. */
+/* TODO: Make a macro for off to be excluded. */
 int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, off_t off) {
   int ret = OK;
 
   /* TODO: Think about off > f-f_size and the entire HOLE situation. */
-  if(off == f->f_size) {
+  if(off == f->size) {
     return __file_append(f, buf, len);
   }
 
@@ -136,7 +135,7 @@ int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, 
   memcpy(&temp_f, f, sizeof(struct mnemofs_file));
 
   /* TODO: Mark the pages from [off, FILE_END] for deletion */
-  temp_f.f_size = off;
+  temp_f.size = off;
   ret = __file_append(&temp_f, buf, len);
   if(ret < 0) {
     goto errout;
@@ -158,4 +157,13 @@ int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, 
 
 errout:
   return ret;
+}
+
+/* Replace `dst_len` worth of bytes at `off` with `src_len` worth of bytes in file `f` */
+int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len) {
+  return OK;
+}
+
+int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len) {
+  return __mnemofs_file_update(f, NULL, 0, off, len);
 }

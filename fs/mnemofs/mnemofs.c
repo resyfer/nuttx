@@ -137,8 +137,7 @@ static int mnemofs_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
 
 static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_unlink(MNEMOFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
@@ -149,16 +148,14 @@ static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
 
 static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_rmdir(MNEMOFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_rename(FAR struct inode *mountpt,
                           FAR const char *oldrelpath,
                           FAR const char *newrelpath)
 {
-  /* TODO */
-  return OK;
+  return __mnemofs_mv(MNEMOFS_SB(mountpt), oldrelpath, newrelpath);
 }
 
 static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,

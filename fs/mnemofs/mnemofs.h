@@ -125,10 +125,15 @@ int __mnemofs_opendir(struct mnemofs_sb_info *info,  FAR const char *relpath, FA
 int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir);
 int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir);
 int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry);
+int __mnemofs_unlink(FAR struct mnemofs_sb_info *sb, FAR const char *relpath);
+int __mnemofs_rmdir(struct mnemofs_sb_info *sb, FAR const char *relpath);
+int __mnemofs_mv(struct mnemofs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath);
 
 /* mnemofs_file.c */
 
 int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_t off, char *buf, ssize_t len);
 int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
+int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len);
+int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len);
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */
