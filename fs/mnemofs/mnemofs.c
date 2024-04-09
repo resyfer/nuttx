@@ -67,6 +67,14 @@ static int mnemofs_readdir(FAR struct inode *mountpt,
                             FAR struct dirent *entry);
 static int mnemofs_rewinddir(FAR struct inode *mountpt,
                               FAR struct fs_dirent_s *dir);
+static int mnemofs_open(FAR struct file *filep, FAR const char *relpath,
+                 int oflags, mode_t mode);
+static int mnemofs_close(FAR struct file *filep);
+static ssize_t mnemofs_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
+static ssize_t mnemofs_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
+static off_t mnemofs_seek(FAR struct file *filep, off_t offset, int whence);
+static int mnemofs_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
+static int mnemofs_truncate(FAR struct file *filep, off_t length);
 
 /****************************************************************************
  * Private Data
@@ -78,14 +86,14 @@ static int mnemofs_rewinddir(FAR struct inode *mountpt,
 
 const struct mountpt_operations g_mnemofs_operations =
 {
-  NULL, /* open */
-  NULL, /* close */
-  NULL, /* read */
-  NULL, /* write */
-  NULL, /* seek */
-  NULL, /* ioctl */
+  mnemofs_open, /* open */
+  mnemofs_close, /* close */
+  mnemofs_read, /* read */
+  mnemofs_write, /* write */
+  mnemofs_seek, /* seek */
+  mnemofs_ioctl, /* ioctl */
   NULL, /* mmap */
-  NULL, /* truncate */
+  mnemofs_truncate, /* truncate */
   NULL, /* poll */
 
   NULL, /* sync */
@@ -190,4 +198,36 @@ static int mnemofs_rewinddir(FAR struct inode *mountpt,
                               FAR struct fs_dirent_s *dir)
 {
   return __mnemofs_rewinddir(MNEMOFS_SB(mountpt), dir);
+}
+
+/*TODO: Macro for the typecast.*/
+/*TODO: For now, filep->i_priv is SB. */
+static int mnemofs_open(FAR struct file *filep, FAR const char *relpath, int oflags, mode_t mode) {
+  return __mnemofs_open(filep, relpath, oflags, mode);
+}
+
+static int mnemofs_close(FAR struct file *filep) {
+  return __mnemofs_close(filep);
+}
+
+static ssize_t mnemofs_read(FAR struct file *filep, FAR char *buffer, size_t buflen) {
+  return __mnemofs_read(filep, buffer, buflen);
+}
+
+static ssize_t mnemofs_write(FAR struct file *filep, FAR const char *buffer, size_t buflen) {
+  return __mnemofs_write(filep, buffer, buflen);
+}
+
+static off_t mnemofs_seek(FAR struct file *filep, off_t offset, int whence) {
+  return __mnemofs_seek(filep, offset, whence);
+}
+
+static int mnemofs_ioctl(FAR struct file *filep, int cmd, unsigned long arg) {
+  /* TODO */
+  return OK;
+}
+
+static int mnemofs_truncate(FAR struct file *filep, off_t length) {
+  /* TODO */
+  return OK;
 }

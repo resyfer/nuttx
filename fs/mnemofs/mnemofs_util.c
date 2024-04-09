@@ -122,3 +122,18 @@ uint8_t mnemofs_get_type(mode_t mode) {
   /* TODO */
   return OK;
 }
+
+uint8_t mnemofs_calc_str_hash(FAR const char *str, ssize_t len) {
+  ssize_t l = 0;
+  ssize_t r = len - 1;
+  uint16_t hash = 0;
+
+  while(l <= r) {
+    hash += str[l] * str[r] * l * r;
+    l++;
+    r--;
+    hash %= (1 << 8);
+  }
+
+  return hash % (1 << 8);
+}
