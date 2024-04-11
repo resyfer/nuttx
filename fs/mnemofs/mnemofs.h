@@ -107,7 +107,8 @@ enum {
 /* mnemofs_master.c */
 
 void init_master(uint32_t mb0, uint32_t mb1);
-int save_master_log(uint32_t new_mb);
+int save_master_log(struct mnemofs_sb_info *sb, uint32_t new_master);
+int32_t get_master_blk(struct mnemofs_sb_info *sb);
 int get_master(char *data, int data_len);
 
 /* mnemofs_util.c */

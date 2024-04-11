@@ -68,7 +68,7 @@ static uint32_t blks[2]; /* TODO: Initialize */
  ****************************************************************************/
 
 /* Save Master Node */
-int save_master_log(uint32_t new_master) {
+int save_master_log(struct mnemofs_sb_info *sb, uint32_t new_master) {
   int ret;
   char *data;
   int chksum;
@@ -79,7 +79,7 @@ int save_master_log(uint32_t new_master) {
   chksum = mnemofs_chksm((char *) &new_master, sizeof(new_master));
   len = sizeof(new_master) + sizeof(chksum);
 
-  if(mb_pg_idx == mnemofs_sb.pg_in_blk - 1) {
+  if(mb_pg_idx == sb->pg_in_blk - 1) {
     /* TODO: unlikely */
     /* TODO: Move the journal, the master block is full. */
     /* TODO: Better return error code */
@@ -94,14 +94,14 @@ int save_master_log(uint32_t new_master) {
   /* master block logs are 40 bits in size, which is way less
   than usual page size. */
 
-  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(blks[MB_PRIM]) + mb_pg_idx, 0);
+  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(sb, blks[MB_PRIM]) + mb_pg_idx, 0);
   if(ret < 0) {
     goto errout_with_data;
   }
   
   mb_pg_idx++;
   
-  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(blks[MB_SEC]) + mb_pg_idx, 0);
+  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(sb, blks[MB_SEC]) + mb_pg_idx, 0);
   if(ret < 0) {
     goto errout_with_data;
   }
@@ -112,19 +112,19 @@ errout_with_data:
   return ret;
 }
 
-int32_t get_master_blk(void) {
+int32_t get_master_blk(struct mnemofs_sb_info *sb) {
   /* TODO: Unlikely that there is no idx - 1 log, since mount or moving the
   journal adds atleast one log, and the pointer points to the next page.*/
 
   int ret = OK;
-  char *data = kmm_zalloc(mnemofs_sb.pg_sz);
+  char *data = kmm_zalloc(sb->pg_sz);
   if(!data) {
     ret = -ENOMEM;
     goto errout;
   }
 
-  ret = mnemofs_read_data(data, mnemofs_sb.pg_sz,
-                      MNEMOFS_BLK_T_PG(blks[MB_PRIM]) + (mb_pg_idx - 1), 0);
+  ret = mnemofs_read_data(data, sb->pg_sz,
+                      MNEMOFS_BLK_T_PG(sb, blks[MB_PRIM]) + (mb_pg_idx - 1), 0);
   if(ret < 0) {
     goto errout_with_data;
   }
