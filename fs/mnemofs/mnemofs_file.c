@@ -763,7 +763,7 @@ static int search_open_files(struct mnemofs_sb_info *sb, FAR const char *relpath
   int ret = 0;
   int lock = 0;
 
-  if(!sb->d_start) {
+  if(!sb->d_s) {
     goto out;
   }
 
@@ -775,7 +775,7 @@ static int search_open_files(struct mnemofs_sb_info *sb, FAR const char *relpath
     lock = 1;
   }
 
-  for(head = sb->f_start; head != sb->f_end; head = head->next) {
+  for(head = sb->f_s; head != sb->f_e; head = head->next) {
     if(head->ff.hash == hash) {
       /* Hash collision */
       if(!strncmp(relpath, head->ff.path, head->ff.pathlen)) {
@@ -858,13 +858,13 @@ int __mnemofs_open(struct file *fp, FAR const char *relpath, int oflags, mode_t 
   to ALL open file descriptors / pointers when the file updates. */
 
   /* Append at the end of list of open files. */
-  if(sb->f_end == NULL /* && sb->f_start == NULL */) {
-    sb->f_start = fi;
-    sb->f_end = fi;
+  if(sb->f_e == NULL /* && sb->f_start == NULL */) {
+    sb->f_s = fi;
+    sb->f_e = fi;
   } else {
-    sb->f_end->next = fi;
-    fi->prev = sb->f_end;
-    sb->f_end = fi;
+    sb->f_e->next = fi;
+    fi->prev = sb->f_e;
+    sb->f_e = fi;
   }
 
   /*
@@ -906,16 +906,16 @@ int __mnemofs_close(struct file *fp) {
 
   /* TODO: Debug assert to check if dir is not NULL */
 
-  if(sb->f_start == fi && sb->f_end == fi /* && ff->prev == NULL && ff->next == NULL */) {
-    sb->f_start = NULL;
-    sb->f_end = NULL;
+  if(sb->f_s == fi && sb->f_e == fi /* && ff->prev == NULL && ff->next == NULL */) {
+    sb->f_s = NULL;
+    sb->f_e = NULL;
   } else {
 
     /* Taking care of terminal nodes preculiarities. */
-    if (sb->f_start == fi) {
-      sb->f_start = fi->next;
-    } else if (sb->f_end == fi) {
-      sb->f_end = fi->prev;
+    if (sb->f_s == fi) {
+      sb->f_s = fi->next;
+    } else if (sb->f_e == fi) {
+      sb->f_e = fi->prev;
     }
 
     fi->prev->next = fi->next;

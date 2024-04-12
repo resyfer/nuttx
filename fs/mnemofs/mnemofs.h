@@ -44,12 +44,44 @@
 #define MNEMOFS_BLK_START(sb, pg) (MNEMOFS_BLK_T_PG(sb, MNEMOFS_PG_T_BLK(sb, pg)))
 #define MNEMOFS_BLK_END(sb, pg) (MNEMOFS_BLK_START(sb, pg) + sb->pg_in_blk - 1)
 
+#define MNEMOFS_PC_SZ 10
+#define MNEMOFS_MAX_ARGS 4 /* mnemofs_open */
+
 #define MNEMOFS_SB(mountpt) ((struct mnemofs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
 
 typedef uint32_t  mfs_t;
 typedef int32_t  mfs_off_t;
 
 struct mnemofs_direntry_info;
+
+enum MNEMOFS_TASK {
+  MNEMOFS_OPEN,
+  MNEMOFS_CLOSE,
+  MNEMOFS_READ,
+  MNEMOFS_WRITE,
+  MNEMOFS_SEEK,
+  MNEMOFS_IOCTL,
+  MNEMOFS_TRUNCATE,
+  MNEMOFS_OPENDIR,
+  MNEMOFS_CLOSEDIR,
+  MNEMOFS_READDIR,
+  MNEMOFS_REWINDDIR,
+  /* MNEMOFS_BIND, */
+  MNEMOFS_UNBIND,
+  MNEMOFS_STATFS,
+  MNEMOFS_UNLINK,
+  MNEMOFS_MKDIR,
+  MNEMOFS_RMDIR,
+  MNEMOFS_RENAME,
+  MNEMOFS_STAT,
+};
+
+struct mfs_task {
+  struct mfs_task *prev;
+  struct mfs_task *next;
+  enum MNEMOFS_TASK type;
+  void *args[MNEMOFS_MAX_ARGS];
+};
 
 struct mnemofs_sb_info {
   mutex_t fs_lock;
@@ -60,13 +92,17 @@ struct mnemofs_sb_info {
   uint8_t jrnl_blks;
   uint32_t master_node;
   struct inode root_ino;
-  struct mnemofs_file_info *f_start;
-  struct mnemofs_file_info *f_end;
-  struct mnemofs_fs_dirent *d_start; /* Start of open dirs */
-  struct mnemofs_fs_dirent *d_end; /* End of open dirs */
+  struct mnemofs_file_info *f_s;
+  struct mnemofs_file_info *f_e;
+  struct mnemofs_fs_dirent *d_s; /* Start of open dirs */
+  struct mnemofs_fs_dirent *d_e; /* End of open dirs */
   struct mnemofs_direntry_info *root; /* TODO: Initialize */
+  sem_t full; /* TODO: Init */
+  sem_t empty; /* TODO: Init */
+  mutex_t pc_lock; /* TODO: Init */
+  struct mfs_task *pc_s; /* TODO: Init as NULL */
+  struct mfs_task *pc_e; /* TODO: Init as NULL */
 };
-
 
 struct mnemofs_ctz_s {
   mfs_t last_pg;
@@ -84,11 +120,6 @@ struct mnemofs_file {
   struct mnemofs_ctz_s l;
   ssize_t off; /* Current offset in bytes */
   ssize_t size; /* TODO: Make a function to extract this. */
-};
-
-enum {
-  MNEMOFS_FILE,
-  MNEMOFS_DIR,
 };
 
 /* mnemofs_nand.c */

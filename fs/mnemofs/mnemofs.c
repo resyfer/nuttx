@@ -125,6 +125,7 @@ static int mnemofs_bind(FAR struct inode *blkdriver, FAR const void *data,
 {
   /* TODO: mountpt->i_private needs to have the sb_info */
   /* TODO */
+
   return OK;
 }
 

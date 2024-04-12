@@ -85,7 +85,7 @@ static int search_open_dirs(struct mnemofs_sb_info *sb, FAR const char *relpath)
   int ret = 0;
   int lock = 0;
 
-  if(!sb->d_start) {
+  if(!sb->d_s) {
     goto out;
   }
 
@@ -98,7 +98,7 @@ static int search_open_dirs(struct mnemofs_sb_info *sb, FAR const char *relpath)
   }
 
 
-  for(head = sb->d_start; head != sb->d_end; head = head->next) {
+  for(head = sb->d_s; head != sb->d_e; head = head->next) {
     if(head->hash == hash) {
       /* Hash collision */
       if(!strncmp(relpath, head->path, head->pathlen)) {
@@ -181,13 +181,13 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR s
 
   /* Append at end of list of open dirs */
 
-  if(sb->d_end == NULL /* && sb->d_start == NULL */) {
-    sb->d_start = fdir;
-    sb->d_end = fdir;
+  if(sb->d_e == NULL /* && sb->d_start == NULL */) {
+    sb->d_s = fdir;
+    sb->d_e = fdir;
   } else {
-    sb->d_end->next = fdir;
-    fdir->prev = sb->d_end;
-    sb->d_end = fdir;
+    sb->d_e->next = fdir;
+    fdir->prev = sb->d_e;
+    sb->d_e = fdir;
   }
 
   /* fdir */
@@ -219,16 +219,16 @@ int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) 
 
   /* TODO: Debug assert to check if dir is not NULL */
 
-  if(sb->d_start == fdir && sb->d_end == fdir /* && fdir->prev == NULL && fdir->next == NULL */) {
-    sb->d_start = NULL;
-    sb->d_end = NULL;
+  if(sb->d_s == fdir && sb->d_e == fdir /* && fdir->prev == NULL && fdir->next == NULL */) {
+    sb->d_s = NULL;
+    sb->d_e = NULL;
   } else {
 
     /* Taking care of terminal nodes preculiarities. */
-    if (sb->d_start == fdir) {
-      sb->d_start = fdir->next;
-    } else if (sb->d_end == fdir) {
-      sb->d_end = fdir->prev;
+    if (sb->d_s == fdir) {
+      sb->d_s = fdir->next;
+    } else if (sb->d_e == fdir) {
+      sb->d_e = fdir->prev;
     }
 
     fdir->prev->next = fdir->next;
