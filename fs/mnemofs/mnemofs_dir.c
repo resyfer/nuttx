@@ -10,8 +10,7 @@ struct mnemofs_fs_dirent {
   struct mnemofs_fs_dirent *prev; /* Previous entry in doubly linked list.*/
   struct mnemofs_fs_dirent *next; /* Next entry in doubly linked list.*/
   off_t off; /* Offset of the file. */
-  uint32_t start_pg; /* Last CTZ block (CTZ start) page number. */
-  uint32_t start_idx; /* Last CTZ block (CTZ start) index. */
+  struct mnemofs_ctz_s l;
   /* TODO: Grouping the below and up together for caches.*/
   uint8_t hash; /* pathlen hash for the same reason as direntries have it, for search for when if dir is busy or not while open. */
   uint32_t pathlen; 
@@ -173,8 +172,9 @@ int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR s
   fdir->next = NULL;
   fdir->hash = mnemofs_calc_str_hash(fdir->path, fdir->pathlen);
   fdir->off = MNEMOFS_READDIR_SELF; /* -2 for . && -1 for .. && then the actual offset starts for reads. */
-  fdir->start_pg = child.dir_f.start_pg;
-  fdir->start_idx = child.dir_f.start_idx;
+  fdir->l.last_pg = child.dir_f.l.last_pg;
+  fdir->l.last_idx = child.dir_f.l.last_idx;
+  fdir->l.idx = 0;
   /* We can attach these last two values here instead of a direntry without the
   fear of maintaining multiple sources of truth, as any change to this directory will
   not be allowed if it is open. */
@@ -277,8 +277,7 @@ int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, F
 
   /* Initialize only the useful df fields. */
   df.off = fdir->off;
-  df.start_pg = fdir->start_pg;
-  df.start_idx = fdir->start_idx;
+  df.l = fdir->l;
 
   /* Get the rest of the data first, then get the name from the namelen. This would make
   us read twice, but NAND flash sequential reads are pretty fast. Since this is under a lock,
@@ -450,8 +449,9 @@ int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mod
 
   /* Save the on-flash direntry representation to parent directory. */
   tmp.dir_f.size = 0;
-  tmp.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
-  tmp.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
+  tmp.dir_f.l.idx = 0;
+  tmp.dir_f.l.last_pg = 0; /* TODO: ENUM for empty file for start */
+  tmp.dir_f.l.last_idx = -1; /* TODO: Empty CTZ list enum */
 
   buf = kmm_zalloc(DIRENT_SIZE(tmp.dir_f.pathlen));
   if(!buf) {
@@ -464,14 +464,14 @@ int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mod
   but they signify an empty directory. */
   const uint8_t type = MNEMOFS_DIR;
 
-  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.start_pg, sizeof(tmp.dir_f.start_pg));
-  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.start_idx, sizeof(tmp.dir_f.start_idx));
+  memcpy(buf + DIRENT_PG_OFF, &tmp.dir_f.l.last_pg, sizeof(tmp.dir_f.l.last_pg));
+  memcpy(buf + DIRENT_START_PG, &tmp.dir_f.l.last_idx, sizeof(tmp.dir_f.l.last_idx));
   memcpy(buf + DIRENT_TYPE_OFF, &type, sizeof(type));
   memcpy(buf + DIRENT_NAMELEN_OFF, &tmp.dir_f.pathlen, sizeof(tmp.dir_f.pathlen));
   memcpy(buf + DIRENT_NAME_OFF, tmp.dir_f.path, namelen);
 
   /* Insert at end */
-  ret = __mnemofs_file_insert(&cur_dir.dir_f, buf, DIRENT_SIZE(tmp.dir_f.pathlen), tmp.dir_f.size);
+  ret = __mnemofs_file_insert(sb, &cur_dir.dir_f, buf, DIRENT_SIZE(tmp.dir_f.pathlen), tmp.dir_f.size);
   if(ret < 0) {
     goto errout_with_buf;
   }
@@ -515,7 +515,7 @@ int __mnemofs_rmdir(struct mnemofs_sb_info *sb, FAR const char *relpath) {
     goto errout_with_lock;
   }
 
-  if(child.dir_f.start_pg != 0 /* && child.dir_f.off != 0 */) {
+  if(child.dir_f.l.last_pg != 0 /* && child.dir_f.off != 0 */) {
     ret = -ENOTEMPTY;
     goto errout_with_lock;
   }
@@ -591,11 +591,12 @@ int __mnemofs_mv(struct mnemofs_sb_info *sb, FAR const char *oldrelpath, FAR con
 
   /* Save the on-flash direntry representation to parent directory. */
   new_child.dir_f.size = 0;
-  new_child.dir_f.start_pg = 0; /* TODO: ENUM for empty file for start */
-  new_child.dir_f.start_idx = -1; /* TODO: Empty CTZ list enum */
+  new_child.dir_f.l.idx = 0; /* TODO: ENUM for empty file for start */
+  new_child.dir_f.l.last_pg = 0; /* TODO: ENUM for empty file for start */
+  new_child.dir_f.l.last_idx = -1; /* TODO: Empty CTZ list enum */
   /* These upper entries are same as in __mnemofs_mkdir */
 
-  ret = __mnemofs_file_insert(&new_parent.dir_f, (const char *) &new_child, DIRENT_NAME_OFF + new_child.dir_f.pathlen, new_parent.dir_f.off);
+  ret = __mnemofs_file_insert(sb, &new_parent.dir_f, (const char *) &new_child, DIRENT_NAME_OFF + new_child.dir_f.pathlen, new_parent.dir_f.off);
   if(ret < 0) {
     goto errout_with_lock;
   }

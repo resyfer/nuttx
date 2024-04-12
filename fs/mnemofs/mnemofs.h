@@ -46,11 +46,14 @@
 
 #define MNEMOFS_SB(mountpt) ((struct mnemofs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
 
+typedef uint32_t  mfs_t;
+typedef int32_t  mfs_off_t;
+
 struct mnemofs_direntry_info;
 
 struct mnemofs_sb_info {
   mutex_t fs_lock;
-  uint8_t pg_sz;
+  const uint8_t pg_sz; /* In bytes */
   uint8_t log_pg_sz;
   uint8_t pg_in_blk;
   uint8_t log_pg_in_blk;
@@ -64,6 +67,13 @@ struct mnemofs_sb_info {
   struct mnemofs_direntry_info *root; /* TODO: Initialize */
 };
 
+
+struct mnemofs_ctz_s {
+  mfs_t last_pg;
+  mfs_t last_idx;
+  mfs_t idx; /* Current index */
+};
+
 /* Open files & Directories */
 
 /* TODO: Remove mnemofs_dir and just make it duplicate of mnemofs_file */
@@ -71,8 +81,7 @@ struct mnemofs_file {
   uint8_t pathlen;
   const char *path; /* Depends if it's the entire path or just the file system name.*/
   uint8_t hash;
-  uint32_t start_pg; /* Page corresponding to the last CTZ block */
-  uint32_t start_idx; /* CTZ index (ie. block number) of the last blk */
+  struct mnemofs_ctz_s l;
   ssize_t off; /* Current offset in bytes */
   ssize_t size; /* TODO: Make a function to extract this. */
 };
@@ -84,10 +93,12 @@ enum {
 
 /* mnemofs_nand.c */
 
+ssize_t mnemofs_write_page(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 ssize_t mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 ssize_t mnemofs_write_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 ssize_t mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 ssize_t mnemofs_read_data_szoff(char *data, uint64_t datalen, uint32_t page, uint8_t off);
+ssize_t mnemofs_read_page(char *data, uint64_t datalen, uint32_t page, uint8_t off);
 
 /* mnemofs_blk_alloc.c */
 
@@ -153,8 +164,8 @@ int search_direntries_r(struct mnemofs_direntry_info *parent, struct mnemofs_dir
 
 /* mnemofs_file.c */
 
-int __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, off_t off, char *buf, ssize_t len);
-int __mnemofs_file_insert(struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
+mfs_off_t __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, mfs_off_t off, char *buf, ssize_t len);
+int __mnemofs_file_insert(struct mnemofs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
 int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len);
 int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len);
 
@@ -163,5 +174,55 @@ int __mnemofs_close(struct file *fp);
 ssize_t __mnemofs_read(FAR struct file *fp, FAR char *buf, size_t buflen);
 ssize_t __mnemofs_write(FAR struct file *fp, FAR const char *buf, size_t buflen);
 off_t __mnemofs_seek(FAR struct file *fp, off_t off, int whence);
+
+/* Inline functions */
+/* TODO: Make log2 use this probably?  Or use leading zeroes.*/
+inline uint32_t mnemofs_ctz(const uint32_t x) {
+  if(predict_false(x == 0)) {
+    /* Special case, since we're using this for the CTZ skip list. The 0th
+    block has no pointers. */
+    return 0;
+  }
+
+#if defined(__GNUC__)
+  return __builtin_ctz(x);
+#else
+  uint32_t c;
+  /* Credits:
+  http://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightBinSearch
+  */
+  if (x & 0x1)
+  {
+    // special case for odd x (assumed to happen half of the time)
+    c = 0;
+  }
+  else
+  {
+    c = 1;
+    if ((x & 0xffff) == 0) 
+    {
+      x >>= 16;
+      c += 16;
+    }
+    if ((x & 0xff) == 0) 
+    {
+      x >>= 8;
+      c += 8;
+    }
+    if ((x & 0xf) == 0) 
+    {
+      x >>= 4;
+      c += 4;
+    }
+    if ((x & 0x3) == 0) 
+    {
+      x >>= 2;
+      c += 2;
+    }
+    c -= x & 0x1;
+  }
+  return c;
+#endif
+}
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */

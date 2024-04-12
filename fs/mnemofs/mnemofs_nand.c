@@ -45,6 +45,16 @@
  * Public Data
  ****************************************************************************/
 
+/* TODO:::: I have an idea where page 0 would memset a pagelength in buffer to 0
+instead of the actual buffer. */
+/* TODO:::: Similarly, if someone tries to write to page 0, create a new block
+for it. Also create an internal function, so that superblocks can be rewritten
+when desired (I don't plan to update superblocks). */
+ssize_t mnemofs_write_page(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+  /* TODO */ /* Cache */
+  return 0;
+}
+
 /* Returns the length of the data read (incase it runs out of space) */
 ssize_t mnemofs_write_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
   /* TODO */ /* Cache */
@@ -57,6 +67,16 @@ ssize_t mnemofs_write_data_szoff(char *data, uint64_t datalen, uint32_t page, ui
   /* TODO */ /* Internally use mnemofs_write_data */
   return 0;
 };
+
+/* TODO:::: I have an idea where page 0 would memset a pagelength in buffer to 0
+instead of the actual buffer. */
+/* TODO:::: Similarly, if someone tries to write to page 0, create a new block
+for it. Also create an internal function, so that superblocks can be rewritten
+when desired (I don't plan to update superblocks). */
+ssize_t mnemofs_read_page(char *data, uint64_t datalen, uint32_t page, uint8_t off) {
+  /* TODO */ /* Cache */
+  return 0;
+}
 
 /* Returns the length of the data read (incase it runs out of space) */
 ssize_t mnemofs_read_data(char *data, uint64_t datalen, uint32_t page, uint8_t off) {

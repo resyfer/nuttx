@@ -108,6 +108,8 @@ uint8_t mnemofs_two_x(uint32_t num) {
   return c - 1;
 }
 
+/* Returns a -1 for num == 0. This "feature" has been used in the code, as is
+essential. */
 uint8_t mnemofs_log2(uint32_t num) {
   uint8_t c = 0;
   while(num) {
