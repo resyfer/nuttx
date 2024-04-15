@@ -69,7 +69,7 @@ to the various strucutures. */
 /* Saves a log of a certain type to the journal by attaching the type, the
 length of the actual data, and then the actual data's checksum. This final
 data is then rounded off to the nearest higher page size. */
-static int save_log(struct mnemofs_sb_info *sb, char *data, uint16_t data_len, uint8_t type) {
+static int save_log(struct mfs_sb_info *sb, char *data, uint16_t data_len, uint8_t type) {
 
   /* TODO: Think about endianess when logs are saved to journal */
 
@@ -147,7 +147,7 @@ space for a new journal, set up its circular linked list pointers, and return
 the master block numbers via the parameters. */
 /* NOTE: THIS DOES NOT INITIALIZE master blocks. Use init_master for that. */
 /* TODO: Testing */
-int init_empty_jrnl(struct mnemofs_sb_info *sb, uint32_t *jrnl_blk, uint32_t *master_blk0, uint32_t *master_blk1) {
+int init_empty_jrnl(struct mfs_sb_info *sb, uint32_t *jrnl_blk, uint32_t *master_blk0, uint32_t *master_blk1) {
   /* TODO: endianes. */
   int i;
   int ret = OK;
@@ -244,7 +244,7 @@ errout:
 
 /* TODO: testing */
 /* TODO: Add condiiton for moving journal. Porbably in a different function */
-int move_journal(struct mnemofs_sb_info *sb) {
+int move_journal(struct mfs_sb_info *sb) {
   /* TODO: endianes. */
   int ret = OK;
   char *data = NULL;
@@ -295,7 +295,7 @@ struct jrnl_itr jrnl_itr_init(void) {
 }
 
 /* 0 if OK, 1 if cycled back to the head page. */
-int jrnl_itr_next(struct mnemofs_sb_info *sb, struct jrnl_itr *itr) {
+int jrnl_itr_next(struct mfs_sb_info *sb, struct jrnl_itr *itr) {
   int ret = OK;
 
   if(itr->pg == MNEMOFS_BLK_END(sb, itr->pg)) {

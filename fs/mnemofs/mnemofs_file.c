@@ -49,12 +49,9 @@
  * page sizes, which ties in neatly with every CTZ block being a page in
  * the flash.
  *
- * An extra modification to this design is made that the last node (CTZ
- * block) will contain, in its *first two bytes* (first 16 bits), the actual
- * amount of data written in that last CTZ block in bytes. This would mean
- * the number of bytes in a block has to be in range [0, 65535], which would
- * mean a page size of 524280 bits, or around 64 kiB, which is unlikely for
- * a NAND flash in the foreseeable future.
+ * Since modification to a file in any way would always update the last node,
+ * the file's directory entry will always be updated due to this. Thus file
+ * metadata will be kept in the directory entry.
  *
  *                                                        File Ptr
  *                                                            |
@@ -71,13 +68,14 @@
  * Pre-processor Definitions
  ****************************************************************************/
 #define ROUND_UP_8(x)     ((x + 7) & ~7) /* https://stackoverflow.com/a/1766566/14369307 */
-#define CTZ_PTR_SIZE(sb)  ROUND_UP_8(sb->pg_sz)
-#define LAST_BLK_OFF_SZ(sb)  2 /* The offset at which last block of CTZ starts, to store metadata. */
+#define CTZ_PTR_SIZE(sb)  (ROUND_UP_8(sb->log_pg_sz) / 8)
 #define FIRST_BLK_OFF_SZ(sb)  0 /* The offset at which first block of CTZ starts, to store metadata. */
 /* TODO: Creation time needs to be put here. So find out how much space timestamp takes.
 Similarly modification time needs to be put at the end as well.*/
 
+#define LAST_BLK_OFF_SZ(sb)  2 /* The offset at which last block of CTZ starts, to store metadata. */
 #define LAST_BLK_SIZE_OFF 0
+#define LAST_BLK_IDX_OFF 0
 
 /****************************************************************************
  * Private Types
@@ -87,35 +85,39 @@ Similarly modification time needs to be put at the end as well.*/
  * Private Function Prototypes
  ****************************************************************************/
 
-static mfs_t ctz_nptr(FAR const struct mnemofs_ctz_s * const l);
-static void ctz_off2blk(FAR const struct mnemofs_sb_info *sb, mfs_off_t off,
+static mfs_t ctz_nptr(mfs_t idx);
+static void ctz_off2blk(FAR const struct mfs_sb_info *sb, mfs_off_t off,
                         struct mnemofs_ctz_s *l, mfs_off_t *l_off);
-static mfs_t ctz_blk2pg(struct mnemofs_sb_info *sb,
+static mfs_t ctz_blk2pg(struct mfs_sb_info *sb,
                         const struct mnemofs_ctz_s * const l, const mfs_t idx);
-static ssize_t ctz_blk_rd(struct mnemofs_sb_info *sb,
+static ssize_t ctz_blk_rd(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l, char *buf,
                           const mfs_t idx, ssize_t off);
-static void ctz_blk_frd(struct mnemofs_sb_info *sb,
+static void ctz_blk_frd(struct mfs_sb_info *sb,
                         const struct mnemofs_ctz_s * const l, const mfs_t idx,
                         char *buf);
-static int ctz_append_data(struct mnemofs_sb_info *sb, struct mnemofs_ctz_s * const l,
+static int ctz_append_data(struct mfs_sb_info *sb, struct mnemofs_ctz_s * const l,
                             const char *buf, ssize_t len);
-static uint16_t ctz_blksz(struct mnemofs_sb_info *sb,
+static uint16_t ctz_blksz(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l, const mfs_t idx);
 static inline uint16_t ctz_lastblksz(const struct mnemofs_ctz_s * const l);
+static int ctz_update_data(struct mfs_sb_info *sb, struct mnemofs_ctz_s *l,
+                            const char *buf, const mfs_off_t len, const mfs_off_t off);
 
-static int file_append(struct mnemofs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len);
-static int search_open_files(struct mnemofs_sb_info *sb, FAR const char *relpath);
-static ssize_t file_size(struct mnemofs_sb_info *sb,
+static int file_append(struct mfs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len);
+static int search_open_files(struct mfs_sb_info *sb, FAR const char *relpath);
+static ssize_t file_size(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l);
+static int file_shorten(struct mfs_sb_info *sb, struct mnemofs_file *f,
+                        mfs_t size);
 
 /****************************************************************************
  * Name: ctz_nptrs
  *
  * Description:
  *   This gives a count of the number of pointers in total among the blocks
- *   in the CTZ skip list, which starts at `blk_idx`. This includes the
- *   last CTZ block.
+ *   in the CTZ skip list, starting from `idx`. This count includes `idx`
+ *   CTZ block.
  *
  *   This calculates it on the fact that every CTZ block has a pointer for
  *   every x such that 2^x divides it (and the pointer points to n - 2^x
@@ -129,7 +131,7 @@ static ssize_t file_size(struct mnemofs_sb_info *sb,
  *   this block is 5 + 2 + 1 = 8 pointers.
  *
  * Input Parameters:
- *   blk_idx - Index of the CTZ block in the CTZ skip list (0-indexing).
+ *   idx - CTZ List.
  *
  * Returned Value:
  *   A 32-bit value containing the total number of CTZ pointers that would be
@@ -138,13 +140,12 @@ static ssize_t file_size(struct mnemofs_sb_info *sb,
  *
  ****************************************************************************/
 
-static mfs_t ctz_nptr(FAR const struct mnemofs_ctz_s * const l)
+static mfs_t ctz_nptr(mfs_t idx)
 {
   mfs_t c;
-  mfs_t idx = l->idx;
 
   c = 0;
-  while(idx)
+  while(idx > 0)
   {
     c += idx;
     idx >>= 1;
@@ -156,11 +157,9 @@ static mfs_t ctz_nptr(FAR const struct mnemofs_ctz_s * const l)
  * Name: ctz_off2blk
  *
  * Description:
- *   Converts a CTZ skip list represented file's offset into it's CTZ block
- *   number/index (0-indexing) and the offset in that CTZ block.
- *
- *   These offsets can then be used directly with a low level read/write
- *   function into the NAND flash to retrieve the data.
+ *   Updates a CTZ skip list to point to the CTZ block which contains data
+ *   located at `off` of the data, and sets the offset in that CTZ block as
+ *   well. The data does not contain any metadata and pointers.
  *
  *   The formula comes by solving this mathematical equation:
  *
@@ -186,9 +185,8 @@ static mfs_t ctz_nptr(FAR const struct mnemofs_ctz_s * const l)
  * Input Parameters:
  *   sb            - Superblock representation in-memory.
  *   off           - Offset of the file in bytes.
- *   ctz_start_idx - Index of the last (start) CTZ block in this list.
- *   ctz_blk       - Function-filled return value of the CTZ Block index.
- *   ctz_blk_off   - Function-filled return value of the offset in CTZ Block.
+ *   l             - CTZ list.
+ *   l_off         - Offset in the CTZ block.
  *
  * Returned Value:
  *   Return parameters `ctz_blk` and `ctz_blk_off` are used.
@@ -205,7 +203,7 @@ static mfs_t ctz_nptr(FAR const struct mnemofs_ctz_s * const l)
  *
  ****************************************************************************/
 
-static void ctz_off2blk(FAR const struct mnemofs_sb_info *sb, mfs_off_t off,
+static void ctz_off2blk(FAR const struct mfs_sb_info *sb, mfs_off_t off,
                         struct mnemofs_ctz_s *l, mfs_off_t *l_off)
 {
   mfs_t blk_tsz = 0; /* Total size of the blocks before the block x (0-indexing for x) */
@@ -295,7 +293,7 @@ end:
  *
  ****************************************************************************/
 
-static mfs_t ctz_blk2pg(struct mnemofs_sb_info *sb,
+static mfs_t ctz_blk2pg(struct mfs_sb_info *sb,
                         const struct mnemofs_ctz_s * const l, const mfs_t idx)
 {
 
@@ -388,7 +386,7 @@ end:
  *
  ****************************************************************************/
 
-static ssize_t ctz_blk_rd(struct mnemofs_sb_info *sb,
+static ssize_t ctz_blk_rd(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l, char *buf,
                           const mfs_t idx, ssize_t off)
 {
@@ -431,7 +429,7 @@ static ssize_t ctz_blk_rd(struct mnemofs_sb_info *sb,
  *
  ****************************************************************************/
 
-static void ctz_blk_frd(struct mnemofs_sb_info *sb,
+static void ctz_blk_frd(struct mfs_sb_info *sb,
                         const struct mnemofs_ctz_s * const l, const mfs_t idx,
                         char *buf)
 {
@@ -462,7 +460,7 @@ static void ctz_blk_frd(struct mnemofs_sb_info *sb,
  *
  ****************************************************************************/
 
-static uint16_t ctz_blksz(struct mnemofs_sb_info *sb,
+static uint16_t ctz_blksz(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l, const mfs_t idx)
 {
   int sz = sb->pg_sz - (CTZ_PTR_SIZE(sb) * (mnemofs_log2(idx) + 1));
@@ -503,9 +501,56 @@ static inline uint16_t ctz_lastblksz(const struct mnemofs_ctz_s * const l)
   return last_off;
 }
 
+/* Actual size of data in a file */
+/* Assumption, `l` belongs to a valid list, and the first and last block
+offsets are as designed. */
+static mfs_off_t ctz_sz(struct mfs_sb_info *sb, const struct mnemofs_ctz_s *l)
+{
+  mfs_t sz = 0;
+
+  /* All blocks till before last block */
+
+  sz += sb->pg_sz * (l->last_idx);
+
+  /* All pointers till before last block */
+
+  sz -= CTZ_PTR_SIZE(sb) * ctz_nptr(l->last_idx - 1);
+
+  /* First Block offset */
+
+  sz -= FIRST_BLK_OFF_SZ(sb);
+
+  /* Last block */
+
+  sz += ctz_lastblksz(l);
+
+  return sz;
+}
+
+/****************************************************************************
+ * Name: ctz_append_data
+ *
+ * Description:
+ *   Appends some data to a CTZ skip list.
+ *
+ * Input Parameters:
+ *   sb   - Superblock representation in-memory.
+ *   l    - CTZ list.
+ *   buf  - Buffer containing data.
+ *   len  - Length of the data.
+ *
+ * Returned Value:
+ *   Status of the append operation.
+ *
+ * Assumptions/Limitations:
+ *
+ ****************************************************************************/
+
 /* NOTE: This will be used for the on-flash update operation, which comes when
 journal is being committed to the flash. */
-static int ctz_append_data(struct mnemofs_sb_info *sb, struct mnemofs_ctz_s * const l,
+/* TODO: This is made such that no memory errors will try to add as much as they can.
+Check if this works like that. */
+static int ctz_append_data(struct mfs_sb_info *sb, struct mnemofs_ctz_s * const l,
                             const char *buf, ssize_t len)
 {
   int ret = OK;
@@ -605,6 +650,30 @@ errout_with_lock:
   return ret;
 }
 
+static int ctz_update_data(struct mfs_sb_info *sb, struct mnemofs_ctz_s *l,
+                            const char *buf, const mfs_off_t len, const mfs_off_t off)
+{
+
+  int ret = OK;
+  mfs_off_t blk_off;
+  mfs_t sz;
+
+  nxmutex_lock(&sb->fs_lock);
+
+  sz = ctz_sz(sb, l);
+
+  if(off + len > sz) {
+
+  } else {
+
+  }
+
+  ctz_off2blk(sb, off, l, &blk_off);
+
+  nxmutex_unlock(&sb->fs_lock);
+  return ret;
+}
+
 /****************************************************************************
  * Name: file_size
  *
@@ -625,7 +694,7 @@ errout_with_lock:
  *
  ****************************************************************************/
 
-static ssize_t file_size(struct mnemofs_sb_info *sb,
+static ssize_t file_size(struct mfs_sb_info *sb,
                           const struct mnemofs_ctz_s * const l)
 {
 
@@ -641,7 +710,7 @@ static ssize_t file_size(struct mnemofs_sb_info *sb,
     /* Removing pointers */
 
     size -= CTZ_PTR_SIZE(sb) *
-            ctz_nptr(&(const struct mnemofs_ctz_s) {.idx = l->last_idx - 1});
+            ctz_nptr(l->last_idx);
 
     size -= FIRST_BLK_OFF_SZ(sb);
   }
@@ -652,8 +721,25 @@ static ssize_t file_size(struct mnemofs_sb_info *sb,
   return size;
 }
 
+/* TODO: This for now contains the actual append operation. Later on, that
+will be split from this, and this will just contain the code to add a cache/journal
+entry for appending of file. */
+static int file_append(struct mfs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len) {
+  return ctz_append_data(sb, &f->l, buf, len);
+}
+
+static int file_shorten(struct mfs_sb_info *sb, struct mnemofs_file *f,
+                        mfs_t size)
+{
+  /* TODO */
+  return 0;
+}
+
 /* Returns size read or error */
-mfs_off_t __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f, mfs_off_t off, char *buf, ssize_t len) {
+mfs_off_t __mnemofs_file_read(struct mfs_sb_info *sb,
+                              struct mnemofs_file *f, mfs_off_t off,
+                              char *buf, ssize_t len)
+{
 
   mfs_off_t pg_off; /* ctz_blk_off and pg_off are same here */
   mfs_t ret = OK;
@@ -670,8 +756,10 @@ mfs_off_t __mnemofs_file_read(struct mnemofs_sb_info *sb, struct mnemofs_file *f
     }
     len -= ret;
     tmp_buf += ret;
-    if(f->l.idx + 1 <= f->l.last_idx) {
+    if(predict_true(f->l.idx + 1 <= f->l.last_idx)) {
       f->l.idx++; /* Next Block */
+    } else {
+      break;
     }
   }
 
@@ -679,42 +767,31 @@ errout:
   return ret >= 0 ? tmp_buf - buf : ret;
 }
 
-/* TODO: This for now contains the actual append operation. Later on, that
-will be split from this, and this will just contain the code to add a cache/journal
-entry for appending of file. */
-static int file_append(struct mnemofs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len) {
-  return ctz_append_data(sb, &f->l, buf, len);
-}
-
 /* Enter off as f->f_size to append at end. */
-/* TODO: Make a macro for off to be excluded. */
 /* TODO: Updates the file's size as well. */
 /* This handles the off > size case. */
-int __mnemofs_file_insert(struct mnemofs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len, off_t off) {
+int __mnemofs_file_insert(struct mfs_sb_info *sb, struct mnemofs_file *f,
+                          const char *buf, ssize_t len, off_t off)
+{
   int ret = OK;
-
-  /* TODO: Think about off > f-f_size and the entire HOLE situation. */
-  if(off == f->size) {
-    return file_append(sb, f, buf, len);
-  }
-
   struct mnemofs_file temp_f;
-  memcpy(&temp_f, f, sizeof(struct mnemofs_file));
 
-  /* TODO: Mark the pages from [off, FILE_END] for deletion */
-  temp_f.size = off;
-  ret = file_append(sb, &temp_f, buf, len);
-  if(ret < 0) {
-    goto errout;
+  nxmutex_lock(&sb->fs_lock);
+
+  if(predict_true(off == f->size)) {
+    ret = file_append(sb, f, buf, len);
+    goto errout_with_lock;
   }
 
-  /* TODO: Manage the upcoming blocks that fall outside of the update range,
-  such that if, say, there is a string abcdefghijk, and I try to write xyz at index
-  3, the result is abcxyzghijk and not abcxyz.
-  
-  abcxyz is what the current implementation line below does. CHANGE IT!!!!
-  */
-  memcpy(f, &temp_f, sizeof(struct mnemofs_file));
+  temp_f = *f;
+
+  if(predict_true(off + len > f->size)) {
+
+
+
+  } else {
+
+  }
 
   /* TODO: Upon update, add a journal log that mentions that the file's start block
   has changed, and thus, its direntry needs to be updated. */
@@ -722,20 +799,15 @@ int __mnemofs_file_insert(struct mnemofs_sb_info *sb, struct mnemofs_file *f, co
   parent when the journal is being committed, which is what this function will be
   when its written in a separate function from this one.*/
 
-errout:
+errout_with_lock:
+  nxmutex_unlock(&sb->fs_lock);
   return ret;
 }
 
 /* Replace `dst_len` worth of bytes at `off` with `src_len` worth of bytes in file `f` */
 /* TODO: Updates the file's size as well. */
-int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len) {
-  return OK;
-}
 
 /* TODO: Updates the file's size as well. */
-int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len) {
-  return __mnemofs_file_update(f, NULL, 0, off, len);
-}
 
 //------------------------------------------------
 
@@ -756,7 +828,7 @@ traversing the LRU.
 /* Keep a global LRU for all updates. */
 // 0 - Not found, 1 - Found
 /* Almost duplicate of search_open_dirs */
-static int search_open_files(struct mnemofs_sb_info *sb, FAR const char *relpath) {
+static int search_open_files(struct mfs_sb_info *sb, FAR const char *relpath) {
 
   uint8_t hash;
   struct mnemofs_file_info *head;
@@ -801,7 +873,7 @@ int __mnemofs_open(struct file *fp, FAR const char *relpath, int oflags, mode_t 
   struct mnemofs_file_info *fi;
   struct mnemofs_direntry_info parent, child;
   const int pathlen = strlen(relpath);
-  struct mnemofs_sb_info *sb;
+  struct mfs_sb_info *sb;
   struct inode *inode;
 
   inode = fp->f_inode;
@@ -895,7 +967,7 @@ int __mnemofs_close(struct file *fp) {
 
   int ret = OK;
   struct inode *inode;
-  struct mnemofs_sb_info *sb;
+  struct mfs_sb_info *sb;
   struct mnemofs_file_info *fi;
 
   inode = fp->f_inode;
@@ -934,7 +1006,7 @@ ssize_t __mnemofs_read(FAR struct file *fp, FAR char *buf, size_t buflen) {
 
   int ret = OK;
   struct inode *inode;
-  struct mnemofs_sb_info *sb;
+  struct mfs_sb_info *sb;
   struct mnemofs_file_info *fi;
   struct mnemofs_file ff;
   ssize_t len;
@@ -971,7 +1043,7 @@ ssize_t __mnemofs_write(FAR struct file *fp, FAR const char *buf, size_t buflen)
 
   int ret = OK;
   struct inode *inode;
-  struct mnemofs_sb_info *sb;
+  struct mfs_sb_info *sb;
   struct mnemofs_file_info *fi;
   ssize_t len;
   ssize_t off;
@@ -1010,7 +1082,7 @@ off_t __mnemofs_seek(FAR struct file *fp, off_t off, int whence) {
 
   off_t ret = 0;
   struct inode *inode;
-  struct mnemofs_sb_info *sb;
+  struct mfs_sb_info *sb;
   struct mnemofs_file_info *fi;
   off_t old_off;
 
@@ -1055,5 +1127,52 @@ off_t __mnemofs_seek(FAR struct file *fp, off_t off, int whence) {
   nxmutex_unlock(&sb->fs_lock);
 
 errout:
+  return ret;
+}
+
+int __mnemofs_truncate(FAR struct file *fp, mfs_off_t len) {
+
+  off_t ret = 0;
+  struct inode *inode;
+  struct mfs_sb_info *sb;
+  struct mnemofs_file_info *fi;
+  char *buf = NULL;
+
+  /* TODO: Debug Assert for fp. */
+
+  inode = fp->f_inode;
+  sb = inode->i_private;
+  fi = fp->f_priv;
+
+  nxmutex_lock(&sb->fs_lock);
+
+  if(!(fi->mode & O_WRONLY)) {
+    ret = -EBADF; /* Linux produces EINVAL, but EBADF is POSIX. */
+    goto errout_with_lock;
+  }
+
+  if(predict_false(len == fi->ff.size)) {
+    goto errout_with_lock;
+  } else if(predict_false(len > fi->ff.size)) {
+
+    /* Holes. Mnemofs doesn't bother with optimizing this for now,
+    and fills it with NULL. Most RTOS situations won't use this anyway.*/
+
+    buf = kmm_zalloc(len);
+    if(!buf) {
+      ret = -ENOMEM;
+      goto errout_with_lock;
+    }
+
+    ret = file_append(sb, &fi->ff, buf, len);
+  } else {
+    /* Delete rest of the data */
+    ret = file_shorten(sb, &fi->ff, len);
+  }
+
+  kmm_free(buf);
+
+errout_with_lock:
+  nxmutex_unlock(&sb->fs_lock);
   return ret;
 }

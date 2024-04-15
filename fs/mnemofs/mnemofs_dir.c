@@ -35,7 +35,7 @@ struct mnemofs_fs_dirent {
 
 static ssize_t get_cur_name_len(FAR const char *path);
 static int search_direntries(struct mnemofs_direntry_info *parent, struct mnemofs_direntry_info *child, FAR const char *name, ssize_t namelen);
-static int search_open_dirs(struct mnemofs_sb_info *sb, FAR const char *relpath);
+static int search_open_dirs(struct mfs_sb_info *sb, FAR const char *relpath);
 
 /* Like strtok, but does not change string. Gives the name till the next '\' or '\0' */
 static ssize_t get_cur_name_len(FAR const char *path) {
@@ -78,7 +78,7 @@ int search_direntries_r(struct mnemofs_direntry_info *parent, struct mnemofs_dir
 //---------------------------------
 
 // 0 - Not found, 1 - Found
-static int search_open_dirs(struct mnemofs_sb_info *sb, FAR const char *relpath) {
+static int search_open_dirs(struct mfs_sb_info *sb, FAR const char *relpath) {
 
   uint8_t hash;
   struct mnemofs_fs_dirent *head;
@@ -118,7 +118,7 @@ out:
   return ret;
 }
 
-int __mnemofs_opendir(struct mnemofs_sb_info *sb, FAR const char *relpath, FAR struct fs_dirent_s **dir) {
+int __mnemofs_opendir(struct mfs_sb_info *sb, FAR const char *relpath, FAR struct fs_dirent_s **dir) {
 
   int ret = OK;
   struct mnemofs_direntry_info parent, child;
@@ -210,7 +210,7 @@ errout:
 }
 
 /* TODO: Check if SB is even required. */
-int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) {
+int __mnemofs_closedir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir) {
   struct mnemofs_fs_dirent *fdir;
 
   fdir = (struct mnemofs_fs_dirent *) dir;
@@ -243,7 +243,7 @@ int __mnemofs_closedir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) 
   return OK;
 }
 
-int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir) {
+int __mnemofs_rewinddir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir) {
   nxmutex_lock(&sb->fs_lock);
 
   ((struct mnemofs_fs_dirent *) dir)->off = MNEMOFS_READDIR_SELF;
@@ -252,7 +252,7 @@ int __mnemofs_rewinddir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir)
   return 0;
 }
 
-int __mnemofs_readdir(struct mnemofs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry) {
+int __mnemofs_readdir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry) {
 
   struct mnemofs_fs_dirent *fdir = (struct mnemofs_fs_dirent *) dir;
   ssize_t len;
@@ -327,7 +327,7 @@ UNIX meant to unlink the file, and the file is later removed,
 presumably when no other processes are using it. */
 /* TODO: If a directory becomes empty (apart from . and ..), then set the
 directory's dirent_info.pg to 0 to denote an empty directory. */
-int __mnemofs_unlink(FAR struct mnemofs_sb_info *sb, FAR const char *relpath) {
+int __mnemofs_unlink(FAR struct mfs_sb_info *sb, FAR const char *relpath) {
   struct mnemofs_direntry_info parent, child;
   const int pathlen = strlen(relpath);
   int ret = OK;
@@ -369,7 +369,7 @@ errout_with_lock:
   return ret;
 }
 
-int __mnemofs_mkdir(struct mnemofs_sb_info *sb, FAR const char *path, mode_t mode) {
+int __mnemofs_mkdir(struct mfs_sb_info *sb, FAR const char *path, mode_t mode) {
 
   FAR const char *name = path;
   ssize_t namelen = -1; /* It is set to -1 for the first pass */
@@ -484,7 +484,7 @@ errout:
   return ret;
 }
 
-int __mnemofs_rmdir(struct mnemofs_sb_info *sb, FAR const char *relpath) {
+int __mnemofs_rmdir(struct mfs_sb_info *sb, FAR const char *relpath) {
 
   /* TODO: Look for the EINVAL condition from the man page. */
 
@@ -534,7 +534,7 @@ errout_with_lock:
 }
 
 /* Move File. */
-int __mnemofs_mv(struct mnemofs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath) {
+int __mnemofs_mv(struct mfs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath) {
 
   struct mnemofs_direntry_info old_parent, old_child, new_parent, new_child;
   int ret = OK;

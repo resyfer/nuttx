@@ -25,6 +25,8 @@
 
 #include <nuttx/mtd/nand.h>
 
+#include "mnemofs.h"
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -112,5 +114,9 @@ int mnemofs_blk_mark_full(uint32_t blk) {
 /* TODO: Implementation */
 /* TODO: Mutex */
 int mnemofs_pg_dlt(uint32_t pg) {
+  return OK;
+}
+
+int mnemofs_pg_mrkdlt(mfs_t pg) {
   return OK;
 }

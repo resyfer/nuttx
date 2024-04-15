@@ -68,7 +68,7 @@ static uint32_t blks[2]; /* TODO: Initialize */
  ****************************************************************************/
 
 /* Save Master Node */
-int save_master_log(struct mnemofs_sb_info *sb, uint32_t new_master) {
+int save_master_log(struct mfs_sb_info *sb, uint32_t new_master) {
   int ret;
   char *data;
   int chksum;
@@ -112,7 +112,7 @@ errout_with_data:
   return ret;
 }
 
-int32_t get_master_blk(struct mnemofs_sb_info *sb) {
+int32_t get_master_blk(struct mfs_sb_info *sb) {
   /* TODO: Unlikely that there is no idx - 1 log, since mount or moving the
   journal adds atleast one log, and the pointer points to the next page.*/
 
