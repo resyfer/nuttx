@@ -146,25 +146,25 @@ static int mnemofs_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
 
 static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  return __mnemofs_unlink(mfs_sb_info, relpath);
+  return __mnemofs_unlink(MNEMOFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
                           mode_t mode)
 {
-  return __mnemofs_mkdir(mfs_sb_info, relpath, mode);
+  return __mnemofs_mkdir(MNEMOFS_SB(mountpt), relpath, mode);
 }
 
 static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  return __mnemofs_rmdir(mfs_sb_info, relpath);
+  return __mnemofs_rmdir(MNEMOFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_rename(FAR struct inode *mountpt,
                           FAR const char *oldrelpath,
                           FAR const char *newrelpath)
 {
-  return __mnemofs_mv(mfs_sb_info, oldrelpath, newrelpath);
+  return __mnemofs_mv(MNEMOFS_SB(mountpt), oldrelpath, newrelpath);
 }
 
 static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
@@ -179,48 +179,48 @@ static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
 static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
                             FAR struct fs_dirent_s **dir)
 {
-  return __mnemofs_opendir(mfs_sb_info, relpath, dir);
+  return __mnemofs_opendir(MNEMOFS_SB(mountpt), relpath, dir);
 }
 
 static int mnemofs_closedir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir)
 {
-  return __mnemofs_closedir(mfs_sb_info, dir);
+  return __mnemofs_closedir(MNEMOFS_SB(mountpt), dir);
 }
 
 static int mnemofs_readdir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir,
                             FAR struct dirent *entry)
 {
-  return __mnemofs_readdir(mfs_sb_info, dir, entry);
+  return __mnemofs_readdir(MNEMOFS_SB(mountpt), dir, entry);
 }
 
 static int mnemofs_rewinddir(FAR struct inode *mountpt,
                               FAR struct fs_dirent_s *dir)
 {
-  return __mnemofs_rewinddir(mfs_sb_info, dir);
+  return __mnemofs_rewinddir(MNEMOFS_SB(mountpt), dir);
 }
 
 /*TODO: Macro for the typecast.*/
 /*TODO: For now, filep->i_priv is SB. */
 static int mnemofs_open(FAR struct file *filep, FAR const char *relpath, int oflags, mode_t mode) {
-  return __mnemofs_open(filep, relpath, oflags, mode);
+  return mfs_f_open(filep, relpath, oflags, mode);
 }
 
 static int mnemofs_close(FAR struct file *filep) {
-  return __mnemofs_close(filep);
+  return mfs_f_close(filep);
 }
 
 static ssize_t mnemofs_read(FAR struct file *filep, FAR char *buffer, size_t buflen) {
-  return __mnemofs_read(filep, buffer, buflen);
+  return mfs_f_rd(filep, buffer, buflen);
 }
 
 static ssize_t mnemofs_write(FAR struct file *filep, FAR const char *buffer, size_t buflen) {
-  return __mnemofs_write(filep, buffer, buflen);
+  return mfs_f_wr(filep, buffer, buflen);
 }
 
 static off_t mnemofs_seek(FAR struct file *filep, off_t offset, int whence) {
-  return __mnemofs_seek(filep, offset, whence);
+  return mfs_f_seek(filep, offset, whence);
 }
 
 static int mnemofs_ioctl(FAR struct file *filep, int cmd, unsigned long arg) {
@@ -229,5 +229,5 @@ static int mnemofs_ioctl(FAR struct file *filep, int cmd, unsigned long arg) {
 }
 
 static int mnemofs_truncate(FAR struct file *filep, off_t length) {
-  return __mnemofs_truncate(filep, length);
+  return mfs_f_trunc(filep, length);
 }

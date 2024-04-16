@@ -56,7 +56,6 @@
 
 #define MFS_CTZ_PTRSZ   (sizeof(mfs_t))
 #define MFS_CTZ_NPTROFF(sb, idx) (MFS_PGSZ(sb) - ((MFS_CTZ_PTRSZ) * ((idx) + 1))) /* Get start point of `idx`th CTZ ptr.*/
-#define MFS_CTZ_SZ(l)     ((l)->sz)
 
 
 /* mfs_ctz_nptrl: Count of pointers from the index to left, including it.*/
@@ -103,6 +102,10 @@ void mfs_ctz_init(const mfs_t last_pg, const mfs_t last_idx, mfs_t sz,
   nxmutex_init(&l->l_lock);
 }
 
+void mfs_ctz_destroy(FAR struct mfs_ctz_s *l) {
+  nxmutex_destroy(&l->l_lock);
+}
+
 /* mfs_point is the father of mfs_next and mfs_prev. */
 /* Follows the principle that less generalize functions call the more
 generalized functions. */
@@ -117,7 +120,11 @@ int mfs_ctz_point(FAR const struct mfs_sb_info * const sb,
 
   if(predict_false(idx > l->idx_e)) {
     ret = -EINVAL;
-    goto errout_with_lock;
+    goto errout;
+  }
+
+  if(predict_false(idx == l->idx_c)) {
+    goto errout;
   }
 
   if(predict_false(idx == l->idx_c - 1)) {
@@ -196,7 +203,7 @@ int mfs_ctz_point(FAR const struct mfs_sb_info * const sb,
     mnemofs_read_mfs_t(&tmp_l.pg_c, tmp_l.pg_c, MFS_CTZ_NPTROFF(sb, tmp));
     tmp_l.idx_c = tmp_l.idx_c - (1 << tmp);
   }
-errout_with_lock:
+errout:
   return ret;
 }
 
@@ -224,20 +231,21 @@ int mfs_ctz_next(FAR const struct mfs_sb_info * const sb,
   (MFS_CTZ_PTRSZ).
 */
 int mfs_ctz_offinfo(FAR const struct mfs_sb_info * const sb,
-                    FAR struct mfs_ctz_s * const l, mfs_t n, mfs_t *idx,
-                    mfs_off_t *off)
+                    FAR struct mfs_ctz_s * const l, mfs_t off, mfs_t *idx,
+                    mfs_off_t *blkoff)
 {
   /* TODO: Get O(1) formula for this. */
   return 0;
 }
 
 int mfs_ctz_offpoint(FAR const struct mfs_sb_info * const sb,
-                    FAR struct mfs_ctz_s * const l, mfs_t n, mfs_off_t *off)
+                    FAR struct mfs_ctz_s * const l, mfs_t off,
+                    mfs_off_t *blkoff)
 {
   mfs_t idx;
   int ret = OK;
 
-  ret = mfs_ctz_offinfo(sb, l, n, &idx, off);
+  ret = mfs_ctz_offinfo(sb, l, off, &idx, blkoff);
   if(predict_false(ret < 0)) {
     goto errout;
   }
@@ -299,6 +307,8 @@ mfs_t mfs_ctz_rd(FAR const struct mfs_sb_info * const sb,
   mfs_t ret = 0;
   FAR char * buf_tmp = buf;
 
+  memset(buf, 0, len); /* This will take care of "holes" for len > l->size */
+
   if(predict_false(off >= l->sz)) {
     goto errout;
   }
@@ -337,7 +347,8 @@ errout:
 /* Replaces `ilen` bytes of file from `off` offset and puts `flen` bytes. */
 /* Updates file size */
 /* Also handles holes. Just insert null values. No optimization. */
-/* Handle the case where off + len > l->sz */
+/* Handle the case where off > l->sz as well as off + len > l->sz */
+/* DOES NOT AND SHOULD NOT UPDATE l EVEN FOR OPTIMIZATION */
 mfs_t mfs_ctz_upd(FAR const struct mfs_sb_info * const sb,
                   FAR const struct mfs_ctz_s * l, const mfs_t off,
                   const mfs_t ilen, const mfs_t flen,
@@ -360,6 +371,7 @@ mfs_t mfs_ctz_trunc(FAR const struct mfs_sb_info * const sb,
   return mfs_ctz_upd(sb, l, len, MFS_CTZ_SZ(l) - len, 0, NULL);
 }
 
+/* DOES NOT AND SHOULD NOT UPDATE l EVEN FOR OPTIMIZATION */
 mfs_t mfs_ctz_wr(FAR const struct mfs_sb_info * const sb,
                 FAR const struct mfs_ctz_s * l, const mfs_t off,
                 FAR const char * const buf, const mfs_t len)

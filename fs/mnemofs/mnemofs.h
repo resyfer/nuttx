@@ -30,6 +30,7 @@
 
 #include <stddef.h>
 #include <nuttx/fs/fs.h>
+#include <nuttx/list.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -50,11 +51,13 @@
 #define MNEMOFS_SB(mountpt) ((struct mfs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
 #define MFS_PGSZ(sb)  (sb->pg_sz)
 #define MFS_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MFS_OFILES(sb)  ((sb)->f)
 
 typedef uint32_t  mfs_t;
 typedef int32_t  mfs_off_t;
 
 struct mnemofs_direntry_info;
+struct mfs_finfo;
 
 struct mfs_sb_info {
   mutex_t fs_lock;
@@ -69,7 +72,9 @@ struct mfs_sb_info {
   struct mnemofs_file_info *f_e;
   struct mnemofs_fs_dirent *d_s; /* Start of open dirs */
   struct mnemofs_fs_dirent *d_e; /* End of open dirs */
-  struct mnemofs_direntry_info *root; /* TODO: Initialize */
+  struct mnemofs_direntry_info *root;
+
+  struct list_node f;
 };
 
 struct mnemofs_ctz_s {
@@ -134,7 +139,7 @@ int get_master(char *data, int data_len);
 uint8_t mnemofs_chksm(char *data, int data_len);
 uint8_t mnemofs_two_x(uint32_t num);
 uint8_t mnemofs_log2(uint32_t num);
-uint8_t mnemofs_calc_str_hash(FAR const char *str, ssize_t len);
+uint8_t mfs_strhash(FAR const char *str, ssize_t len);
 
 /* mnemofs_dir.c */
 
@@ -169,19 +174,12 @@ int __mnemofs_rmdir(struct mfs_sb_info *sb, FAR const char *relpath);
 int __mnemofs_mv(struct mfs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath);
 int search_direntries_r(struct mnemofs_direntry_info *parent, struct mnemofs_direntry_info *child, FAR const char *path, ssize_t pathlen);
 
-/* mnemofs_file.c */
+/* mnemofs_file_old.c */
 
 mfs_off_t __mnemofs_file_read(struct mfs_sb_info *sb, struct mnemofs_file *f, mfs_off_t off, char *buf, ssize_t len);
 int __mnemofs_file_insert(struct mfs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
 int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len);
 int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len);
-
-int __mnemofs_open(struct file *fp, FAR const char *relpath, int oflags, mode_t mode);
-int __mnemofs_close(struct file *fp);
-ssize_t __mnemofs_read(FAR struct file *fp, FAR char *buf, size_t buflen);
-ssize_t __mnemofs_write(FAR struct file *fp, FAR const char *buf, size_t buflen);
-off_t __mnemofs_seek(FAR struct file *fp, off_t off, int whence);
-int __mnemofs_truncate(FAR struct file *fp, mfs_off_t len);
 
 /* Inline helper functions */
 
@@ -264,10 +262,14 @@ struct mfs_ctz_s {
 
 /* TODO: list lock. */
 /* TODO: Remove access to functions that will not lock the list lock. */
+
+#define MFS_CTZ_SZ(l)     ((l)->sz)
+
 mfs_t mfs_ctz_nptrl(FAR struct mfs_ctz_s * const l);
 mfs_t mfs_ctz_nptrc(FAR struct mfs_ctz_s * const l);
 void mfs_ctz_init(const mfs_t last_pg, const mfs_t last_idx, mfs_t sz,
                   FAR struct mfs_ctz_s * const l);
+void mfs_ctz_destroy(FAR struct mfs_ctz_s *l);
 int mfs_ctz_point(FAR const struct mfs_sb_info * const sb,
                   FAR struct mfs_ctz_s * const l, mfs_t idx);
 int mfs_ctz_prev(FAR const struct mfs_sb_info * const sb,
@@ -275,10 +277,11 @@ int mfs_ctz_prev(FAR const struct mfs_sb_info * const sb,
 int mfs_ctz_next(FAR const struct mfs_sb_info * const sb,
                   FAR struct mfs_ctz_s * const l);
 int mfs_ctz_offinfo(FAR const struct mfs_sb_info * const sb,
-                    FAR struct mfs_ctz_s * const l, mfs_t n, mfs_t *idx,
-                    mfs_off_t *off);
+                    FAR struct mfs_ctz_s * const l, mfs_t off, mfs_t *idx,
+                    mfs_off_t *blkoff);
 int mfs_ctz_offpoint(FAR const struct mfs_sb_info * const sb,
-                    FAR struct mfs_ctz_s * const l, mfs_t n, mfs_off_t *off);
+                    FAR struct mfs_ctz_s * const l, mfs_t off,
+                    mfs_off_t *blkoff);
 int mfs_ctz_cpyblkptrs(FAR const struct mfs_sb_info * const sb,
                       FAR struct mfs_ctz_s * const l, const mfs_t idx,
                       FAR char * const buf);
@@ -295,5 +298,42 @@ mfs_t mfs_ctz_trunc(FAR const struct mfs_sb_info * const sb,
 mfs_t mfs_ctz_wr(FAR const struct mfs_sb_info * const sb,
                 FAR const struct mfs_ctz_s * l, const mfs_t off,
                 FAR const char * const buf, const mfs_t len);
+
+/* mnemofs_file.c */
+
+struct mfs_finfo {
+  // struct mfs_finfo *prev;
+  // struct mfs_finfo *next;
+  struct list_node list; /* TODO: Check if we need another list, specifically for this file.*/
+  // mfs_t *path; /* An array of 32-bit integers, representing the page number of the last CTZ block of that file system object. This helps in tracking the file. */
+  // mfs_t pathlen; /* TODO: Check if path and pathlen are required. */
+  /* Last entry in path is page number for current file. */
+  mode_t mode;
+  struct mfs_ctz_s ctz; /* List */
+  mfs_off_t ctz_blkoff;
+  mfs_t off;
+};
+
+struct mfs_dentry {
+  mode_t mode;
+  mfs_t last_idx;
+  mfs_t last_pg;
+  mfs_t sz;
+};
+
+int mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
+                            FAR struct mfs_dentry *child,
+                            FAR const char *relpath, const mfs_t pathlen);
+int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
+                const int oflags, const mode_t mode);
+int mfs_f_close(FAR const struct file * const fp);
+ssize_t mfs_f_rd(FAR const struct file * const fp, FAR char * const buf,
+                const size_t buflen);
+ssize_t mfs_f_wr(FAR const struct file * const fp, FAR const char * const buf,
+                const size_t buflen);
+off_t mfs_f_seek(FAR const struct file * const fp, const off_t off,
+                const int whence);
+int mfs_f_trunc(FAR const struct file * const fp, const off_t len);
+
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */
