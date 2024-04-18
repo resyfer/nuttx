@@ -52,6 +52,8 @@
 #define MFS_PGSZ(sb)  (sb->pg_sz)
 #define MFS_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MFS_OFILES(sb)  ((sb)->f)
+#define MFS_ODIRS(sb)  ((sb)->d)
+#define MFS_ROOT(sb)    ((sb)->root)
 
 typedef uint32_t  mfs_t;
 typedef int32_t  mfs_off_t;
@@ -75,6 +77,7 @@ struct mfs_sb_info {
   struct mnemofs_direntry_info *root;
 
   struct list_node f;
+  struct list_node d;
 };
 
 struct mnemofs_ctz_s {
@@ -140,46 +143,6 @@ uint8_t mnemofs_chksm(char *data, int data_len);
 uint8_t mnemofs_two_x(uint32_t num);
 uint8_t mnemofs_log2(uint32_t num);
 uint8_t mfs_strhash(FAR const char *str, ssize_t len);
-
-/* mnemofs_dir.c */
-
-/* Direntry in memory */
-struct mnemofs_direntry_info { /* TODO: Remove the duplicated from dir_f and this struct. Maintain one source of truth. */
-  /* TODO: dir_f.off will be set after journal is written. This is offset of this dirent in its parent's dirent file, */
-  FAR const char *parent_path; /* Maybe NULL for ROOT */
-  ssize_t parent_pathlen; /* TODO: This is supposed to be the entire path till parent. Contemplate if it is required or not. */
-  mode_t mode;
-  struct mnemofs_file dir_f; /* Directory file. TODO: Initialize this. */
-};
-
-enum MNEMOFS_DIR_SEARCH_ERR {
-  MNEMOFS_DIR_SEARCH_OK,
-  MNEMOFS_DIR_SEARCH_NOT_FOUND,
-  MNEMOFS_DIR_SEARCH_INVALID_PARENT,
-};
-
-enum MNEMOFS_READDIR {
-  MNEMOFS_READDIR_SELF = -2,
-  MNEMOFS_READDIR_PARENT = -1,
-  MNEMOFS_READDIR_CHILDREN = 0, /* >= 0 */
-};
-
-int __mnemofs_mkdir(struct mfs_sb_info *sb, FAR const char *path, mode_t mode);
-int __mnemofs_opendir(struct mfs_sb_info *info,  FAR const char *relpath, FAR struct fs_dirent_s **dir);
-int __mnemofs_closedir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir);
-int __mnemofs_rewinddir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir);
-int __mnemofs_readdir(struct mfs_sb_info *sb, FAR struct fs_dirent_s *dir, FAR struct dirent *entry);
-int __mnemofs_unlink(FAR struct mfs_sb_info *sb, FAR const char *relpath);
-int __mnemofs_rmdir(struct mfs_sb_info *sb, FAR const char *relpath);
-int __mnemofs_mv(struct mfs_sb_info *sb, FAR const char *oldrelpath, FAR const char *newrelpath);
-int search_direntries_r(struct mnemofs_direntry_info *parent, struct mnemofs_direntry_info *child, FAR const char *path, ssize_t pathlen);
-
-/* mnemofs_file_old.c */
-
-mfs_off_t __mnemofs_file_read(struct mfs_sb_info *sb, struct mnemofs_file *f, mfs_off_t off, char *buf, ssize_t len);
-int __mnemofs_file_insert(struct mfs_sb_info *sb, struct mnemofs_file *f, const char *buf, ssize_t len, off_t off);
-int __mnemofs_file_delete(struct mnemofs_file *f, ssize_t off, ssize_t len);
-int __mnemofs_file_update(struct mnemofs_file *f, const char *buf, ssize_t src_len, ssize_t off, ssize_t dst_len);
 
 /* Inline helper functions */
 
@@ -301,6 +264,13 @@ mfs_t mfs_ctz_wr(FAR const struct mfs_sb_info * const sb,
 
 /* mnemofs_file.c */
 
+struct mfs_dentry {
+  mode_t mode;
+  mfs_t last_idx;
+  mfs_t last_pg;
+  mfs_t sz;
+};
+
 struct mfs_finfo {
   // struct mfs_finfo *prev;
   // struct mfs_finfo *next;
@@ -311,19 +281,9 @@ struct mfs_finfo {
   mode_t mode;
   struct mfs_ctz_s ctz; /* List */
   mfs_off_t ctz_blkoff;
-  mfs_t off;
+  mfs_t childoff; /* This stands for offset for children (readdir into ctz)*/
 };
 
-struct mfs_dentry {
-  mode_t mode;
-  mfs_t last_idx;
-  mfs_t last_pg;
-  mfs_t sz;
-};
-
-int mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
-                            FAR struct mfs_dentry *child,
-                            FAR const char *relpath, const mfs_t pathlen);
 int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
                 const int oflags, const mode_t mode);
 int mfs_f_close(FAR const struct file * const fp);
@@ -335,5 +295,46 @@ off_t mfs_f_seek(FAR const struct file * const fp, const off_t off,
                 const int whence);
 int mfs_f_trunc(FAR const struct file * const fp, const off_t len);
 
+/* mnemofs_dir.c */
+
+enum MFS_READDIR {
+  MFS_READDIR_SELF = -2,
+  MFS_READDIR_PARENT = -1,
+  MFS_READDIR_CHILDREN = 0, /* >= 0 */
+};
+
+struct mfs_dinfo {
+  struct fs_dirent_s base;
+  struct list_node list;
+  mode_t mode;
+  struct mfs_ctz_s ctz;
+  mfs_off_t ctz_blkoff;
+  mfs_off_t childoff; /* Unlike a regular file, this counter needs to be -2 at
+                    start for . and .. */ /* This stands for offset for
+                    children (readdir into ctz)*/
+};
+
+int mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
+                            FAR struct mfs_dentry *child,
+                            FAR const char *relpath, const mfs_t pathlen);
+int mfs_d_create(FAR const struct mfs_sb_info * const sb,
+                FAR const char * const path, const mode_t mode);
+int mfs_d_open(FAR struct mfs_sb_info * const sb,
+              FAR const char * const relpath,
+              FAR struct fs_dirent_s ** const dir);
+int mfs_d_close(FAR struct mfs_sb_info * const sb,
+                FAR const struct fs_dirent_s * const dir);
+int mfs_d_rewind(FAR struct mfs_sb_info * const sb,
+                FAR const struct fs_dirent_s * const dir);
+int mfs_d_rd(FAR struct mfs_sb_info * const sb,
+              FAR const struct fs_dirent_s * const dir,
+              FAR struct dirent * const entry);
+int mfs_d_unlink(FAR struct mfs_sb_info * const sb,
+                FAR const char * const relpath);
+int mfs_d_rm(FAR struct mfs_sb_info * const sb,
+            FAR const char * const relpath);
+int mfs_d_mv(FAR struct mfs_sb_info * const sb,
+            FAR const char * const oldrelpath,
+            FAR const char * const newrelpath);
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */

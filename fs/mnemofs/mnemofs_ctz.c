@@ -26,6 +26,8 @@
 
 #include "mnemofs.h"
 
+/* TODO: Should point and read use the blkoffset?? */
+
 /****************************************************************************
  *
  * Files in mnemofs are arranged similar to reversed linked lists. This helps
