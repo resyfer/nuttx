@@ -77,7 +77,7 @@ mfs_t mfs_ctz_nptrl(FAR struct mfs_ctz_s * const l) {
 /* Counts left from current index. Can change the index using ctz_point. */
 mfs_t mfs_ctz_nptrc(FAR struct mfs_ctz_s * const l) {
   mfs_t ret = 0;
-  ret = mnemofs_ctz(l->idx_c) + 1;
+  ret = mfs_ctz(l->idx_c) + 1;
   return ret;
 }
 
@@ -185,7 +185,7 @@ int mfs_ctz_point(FAR const struct mfs_sb_info * const sb,
 
     /* Next iteration */
 
-    tmp = mnemofs_ctz(tmp_l.idx_c);
+    tmp = mfs_ctz(tmp_l.idx_c);
   }
 
   DEBUGASSERT(tmp_l.idx_c != 0 || (tmp_l.idx_c == 0 && idx == 0));
@@ -294,7 +294,7 @@ mfs_t mfs_ctz_blksz(FAR const struct mfs_sb_info * const sb, mfs_t idx)
   /* WARNING!!! This is an independent function and re-implements how to
   count the block size. Any changes to block size counting method needs to
   be updated here as well. */
-  return MFS_PGSZ(sb) - (MFS_CTZ_PTRSZ * (mnemofs_ctz(idx) + 1));
+  return MFS_PGSZ(sb) - (MFS_CTZ_PTRSZ * (mfs_ctz(idx) + 1));
 }
 
 /* Returns length read. */
@@ -360,6 +360,13 @@ mfs_t mfs_ctz_upd(FAR const struct mfs_sb_info * const sb,
   return 0;
 }
 
+mfs_t mfs_ctz_del(FAR const struct mfs_sb_info * const sb,
+                  FAR const struct mfs_ctz_s * l, const mfs_t off,
+                  const mfs_t len)
+{
+  return mfs_ctz_upd(sb, l, off, len, 0, NULL);
+}
+
 /* Returns Final length of the file */
 /* Unlike POSIX truncate, this actually just shortens the file
 at the desired location. Uses ctz_upd internally. */
@@ -370,7 +377,7 @@ mfs_t mfs_ctz_trunc(FAR const struct mfs_sb_info * const sb,
     return MFS_CTZ_SZ(l);
   }
 
-  return mfs_ctz_upd(sb, l, len, MFS_CTZ_SZ(l) - len, 0, NULL);
+  return mfs_ctz_del(sb, l, len, MFS_CTZ_SZ(l) - len);
 }
 
 /* DOES NOT AND SHOULD NOT UPDATE l EVEN FOR OPTIMIZATION */

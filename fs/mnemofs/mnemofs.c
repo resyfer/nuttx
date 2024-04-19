@@ -146,25 +146,25 @@ static int mnemofs_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
 
 static int mnemofs_unlink(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  return mfs_d_unlink(MNEMOFS_SB(mountpt), relpath);
+  return mfs_d_unlink(MFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
                           mode_t mode)
 {
-  return mfs_d_create(MNEMOFS_SB(mountpt), relpath, mode);
+  return mfs_d_create(MFS_SB(mountpt), relpath, mode);
 }
 
 static int mnemofs_rmdir(FAR struct inode *mountpt, FAR const char *relpath)
 {
-  return mfs_d_rm(MNEMOFS_SB(mountpt), relpath);
+  return mfs_d_rm(MFS_SB(mountpt), relpath);
 }
 
 static int mnemofs_rename(FAR struct inode *mountpt,
                           FAR const char *oldrelpath,
                           FAR const char *newrelpath)
 {
-  return mfs_d_mv(MNEMOFS_SB(mountpt), oldrelpath, newrelpath);
+  return mfs_d_mv(MFS_SB(mountpt), oldrelpath, newrelpath);
 }
 
 static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
@@ -179,26 +179,26 @@ static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
 static int mnemofs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
                             FAR struct fs_dirent_s **dir)
 {
-  return mfs_d_open(MNEMOFS_SB(mountpt), relpath, dir);
+  return mfs_d_open(MFS_SB(mountpt), relpath, dir);
 }
 
 static int mnemofs_closedir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir)
 {
-  return mfs_d_close(MNEMOFS_SB(mountpt), dir);
+  return mfs_d_close(MFS_SB(mountpt), dir);
 }
 
 static int mnemofs_readdir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir,
                             FAR struct dirent *entry)
 {
-  return mfs_d_rd(MNEMOFS_SB(mountpt), dir, entry);
+  return mfs_d_rd(MFS_SB(mountpt), dir, entry);
 }
 
 static int mnemofs_rewinddir(FAR struct inode *mountpt,
                               FAR struct fs_dirent_s *dir)
 {
-  return mfs_d_rewind(MNEMOFS_SB(mountpt), dir);
+  return mfs_d_rewind(MFS_SB(mountpt), dir);
 }
 
 static int mnemofs_open(FAR struct file *filep, FAR const char *relpath, int oflags, mode_t mode) {

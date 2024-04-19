@@ -48,8 +48,8 @@
 #define MNEMOFS_PC_SZ 10
 #define MNEMOFS_MAX_ARGS 4 /* mnemofs_open */
 
-#define MNEMOFS_SB(mountpt) ((struct mfs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
-#define MFS_PGSZ(sb)  (sb->pg_sz)
+#define MFS_SB(mountpt) ((struct mfs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
+#define MFS_PGSZ(sb)  ((sb)->pg_sz)
 #define MFS_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MFS_OFILES(sb)  ((sb)->f)
 #define MFS_ODIRS(sb)  ((sb)->d)
@@ -60,6 +60,16 @@ typedef int32_t  mfs_off_t;
 
 struct mnemofs_direntry_info;
 struct mfs_finfo;
+
+struct mfs_dentry {
+  mode_t mode;
+  mfs_t last_idx;
+  mfs_t last_pg;
+  mfs_t sz;
+  mfs_t c_off; /* Current offset in the directory file where this dentry is
+                  situated. */
+  /* Probably needs a length. */
+};
 
 struct mfs_sb_info {
   mutex_t fs_lock;
@@ -74,10 +84,10 @@ struct mfs_sb_info {
   struct mnemofs_file_info *f_e;
   struct mnemofs_fs_dirent *d_s; /* Start of open dirs */
   struct mnemofs_fs_dirent *d_e; /* End of open dirs */
-  struct mnemofs_direntry_info *root;
 
   struct list_node f;
   struct list_node d;
+  struct mfs_dentry root;
 };
 
 struct mnemofs_ctz_s {
@@ -89,18 +99,6 @@ struct mnemofs_ctz_s {
 enum {
   MNEMOFS_FILE,
   MNEMOFS_DIR,
-};
-
-/* Open files & Directories */
-
-/* TODO: Remove mnemofs_dir and just make it duplicate of mnemofs_file */
-struct mnemofs_file {
-  uint8_t pathlen;
-  const char *path; /* Depends if it's the entire path or just the file system name.*/
-  uint8_t hash;
-  struct mnemofs_ctz_s l;
-  ssize_t off; /* Current offset in bytes */
-  ssize_t size; /* TODO: Make a function to extract this. */
 };
 
 /* mnemofs_nand.c */
@@ -147,7 +145,7 @@ uint8_t mfs_strhash(FAR const char *str, ssize_t len);
 /* Inline helper functions */
 
 /* TODO: Make log2 use this probably?  Or use leading zeroes.*/
-inline mfs_t mnemofs_ctz(const uint32_t x) {
+inline mfs_t mfs_ctz(const uint32_t x) {
   if(predict_false(x == 0)) {
     /* Special case, since we're using this for the CTZ skip list. The 0th
     block has no pointers. */
@@ -256,6 +254,9 @@ mfs_t mfs_ctz_upd(FAR const struct mfs_sb_info * const sb,
                   FAR const struct mfs_ctz_s * l, const mfs_t off,
                   const mfs_t ilen, const mfs_t flen,
                   FAR const char * const buf);
+mfs_t mfs_ctz_del(FAR const struct mfs_sb_info * const sb,
+                  FAR const struct mfs_ctz_s * l, const mfs_t off,
+                  const mfs_t len);
 mfs_t mfs_ctz_trunc(FAR const struct mfs_sb_info * const sb,
                     FAR const struct mfs_ctz_s * l, const mfs_t len);
 mfs_t mfs_ctz_wr(FAR const struct mfs_sb_info * const sb,
@@ -264,12 +265,7 @@ mfs_t mfs_ctz_wr(FAR const struct mfs_sb_info * const sb,
 
 /* mnemofs_file.c */
 
-struct mfs_dentry {
-  mode_t mode;
-  mfs_t last_idx;
-  mfs_t last_pg;
-  mfs_t sz;
-};
+#define MFS_DENTRY_LEN(dentry)  (sizeof(dentry)) /* TODO: For now this. */
 
 struct mfs_finfo {
   // struct mfs_finfo *prev;
@@ -281,7 +277,15 @@ struct mfs_finfo {
   mode_t mode;
   struct mfs_ctz_s ctz; /* List */
   mfs_off_t ctz_blkoff;
-  mfs_t childoff; /* This stands for offset for children (readdir into ctz)*/
+  mfs_t off; /* This stands for offset for children (readdir into ctz)*/
+
+  /* TODO: Implement the below. */
+
+  uint8_t path_hash; /* Hash of the entire path. */
+  uint8_t *path; /* An array of hashes of each item in the hierarchy to a path. */
+  uint8_t pathlen; /* Only 255 items in path. YAY! A another limit has been imposed! */
+
+  /* TODO: Add all metadata here. */
 };
 
 int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
@@ -309,14 +313,23 @@ struct mfs_dinfo {
   mode_t mode;
   struct mfs_ctz_s ctz;
   mfs_off_t ctz_blkoff;
-  mfs_off_t childoff; /* Unlike a regular file, this counter needs to be -2 at
+  mfs_off_t off; /* Unlike a regular file, this counter needs to be -2 at
                     start for . and .. */ /* This stands for offset for
                     children (readdir into ctz)*/
+
+  /* TODO: Implement the below. */
+
+  uint8_t path_hash; /* Hash of the entire path. */
+  uint8_t *path; /* An array of hashes of each item in the hierarchy to a path. */
+  uint8_t pathlen; /* Only 255 items in path. YAY! A another limit has been imposed! */
+
+  /* TODO: Add all metadata here. */
 };
 
-int mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
+int16_t mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
                             FAR struct mfs_dentry *child,
-                            FAR const char *relpath, const mfs_t pathlen);
+                            FAR const char *relpath, const mfs_t pathlen,
+                            FAR uint8_t ** hasharr);
 int mfs_d_create(FAR const struct mfs_sb_info * const sb,
                 FAR const char * const path, const mode_t mode);
 int mfs_d_open(FAR struct mfs_sb_info * const sb,

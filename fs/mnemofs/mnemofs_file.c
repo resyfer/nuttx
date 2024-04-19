@@ -19,6 +19,12 @@ written metadata stuff. */
 
 /* TODO: Get return values of all locks and unlocks. */
 
+/* 0 - If not found, 1 - found. Checks if a file with path is open. */
+int mfs_f_probeopen(FAR const char *relpath, const mfs_t pathlen) {
+  /* TODO */
+  return 0;
+}
+
 /* Opens files. Adds an entry to the list of open files,
 even if it is already open. Starts from offset 0. */
 int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
@@ -31,10 +37,11 @@ int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
   FAR struct mfs_finfo *fi;
   struct mfs_dentry parent;
   struct mfs_dentry child;
+  FAR uint8_t *hasharr = NULL;
 
   nxmutex_lock(&sb->fs_lock);
 
-  ret = mfs_probe_direntries_r(&parent, &child, relpath, pathlen);
+  ret = mfs_probe_direntries_r(&parent, &child, relpath, pathlen, &hasharr);
   if(ret != OK) {
     ret = -ENOENT;
     goto errout_with_lock;
@@ -42,16 +49,19 @@ int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
 
   if(!S_ISREG(child.mode)) {
     ret = -EISDIR;
-    goto errout_with_lock;
+    goto errout_with_hasharr;
   }
 
   fi = kmm_zalloc(sizeof(*fi));
   if(!fi) {
     ret = -ENOMEM;
-    goto errout_with_lock;
+    goto errout_with_hasharr;
   }
 
   fi->mode = mode;
+  fi->pathlen = ret; /* Assuming ret has not changed till here. */
+  fi->path = hasharr;
+  fi->path_hash = mfs_strhash(relpath, pathlen);
   /* Not required. zalloc. */
   /* fi->ctz_blkoff = 0; */
   /* fi->childoff = 0; */
@@ -61,6 +71,9 @@ int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
   /* TODO: oflags?? */
 
   fp->f_priv = fi;
+
+errout_with_hasharr:
+  kmm_free(hasharr);
 
 errout_with_lock:
   nxmutex_unlock(&sb->fs_lock);
@@ -96,8 +109,8 @@ ssize_t mfs_f_rd(FAR const struct file * const fp, FAR char * const buf,
 
   /* mfs_ctz_rd will take care of off > l->size or off + buflen > l->size */
 
-  fi->childoff += mfs_ctz_rd(sb, &fi->ctz, fi->ctz_blkoff, buf, buflen);
-  ret = mfs_ctz_offpoint(sb, &fi->ctz, fi->childoff, &fi->ctz_blkoff);
+  fi->off += mfs_ctz_rd(sb, &fi->ctz, fi->ctz_blkoff, buf, buflen);
+  ret = mfs_ctz_offpoint(sb, &fi->ctz, fi->off, &fi->ctz_blkoff);
   if(ret < 0) {
     goto errout_with_lock;
   }
@@ -124,8 +137,8 @@ ssize_t mfs_f_wr(FAR const struct file * const fp, FAR const char * const buf,
 
   /* mfs_ctz_wr will take care of off > l->size or off + buflen > l->size */
 
-  fi->childoff += mfs_ctz_wr(sb, &fi->ctz, fi->ctz_blkoff, buf, buflen);
-  ret = mfs_ctz_offpoint(sb, &fi->ctz, fi->childoff, &fi->ctz_blkoff);
+  fi->off += mfs_ctz_wr(sb, &fi->ctz, fi->ctz_blkoff, buf, buflen);
+  ret = mfs_ctz_offpoint(sb, &fi->ctz, fi->off, &fi->ctz_blkoff);
   if(ret < 0) {
     goto errout_with_lock;
   }
@@ -151,7 +164,7 @@ off_t mfs_f_seek(FAR const struct file * const fp, const off_t off,
 
   nxmutex_lock(&sb->fs_lock);
 
-  ret = fi->childoff;
+  ret = fi->off;
 
   switch(whence) {
 
@@ -176,12 +189,12 @@ off_t mfs_f_seek(FAR const struct file * const fp, const off_t off,
 
   /* Check for wrap around */
 
-  if((off > 0 && ret < fi->childoff) || (off < 0 && ret <= 0)) {
+  if((off > 0 && ret < fi->off) || (off < 0 && ret <= 0)) {
     ret = -EOVERFLOW;
     goto errout_with_lock;
   } else {
     /* Looks alright? */
-    fi->childoff = ret;
+    fi->off = ret;
   }
 
   nxmutex_lock(&sb->fs_lock);
@@ -219,7 +232,7 @@ int mfs_f_trunc(FAR const struct file * const fp, const off_t len)
   if(len < MFS_CTZ_SZ(&fi->ctz)) {
     mfs_ctz_trunc(sb, &fi->ctz, len);
   } else {
-    tmp = fi->childoff + len - MFS_CTZ_SZ(&fi->ctz);
+    tmp = fi->off + len - MFS_CTZ_SZ(&fi->ctz);
     tmpbuf = kmm_zalloc(tmp);
     mfs_ctz_wr(sb, &fi->ctz, MFS_CTZ_SZ(&fi->ctz), tmpbuf, tmp);
   }
