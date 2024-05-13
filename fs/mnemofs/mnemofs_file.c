@@ -19,9 +19,45 @@ written metadata stuff. */
 
 /* TODO: Get return values of all locks and unlocks. */
 
-/* 0 - If not found, 1 - found. Checks if a file with path is open. */
-int mfs_f_probeopen(FAR const char *relpath, const mfs_t pathlen) {
-  /* TODO */
+
+/* 0 - If not found, 1 - found. Checks if a dir with path is open. */
+/* TODO: This assumes that a combo of the hash of the entire path
+and a hash of each element name in the path (along with the order they
+come in) will have an astronomically low chance of being coincidental. */
+uint8_t mfs_f_probeopen(FAR const struct mfs_sb_info * const sb,
+                        FAR const char *relpath, const mfs_t pathlen)
+{
+  const uint8_t path_hash = mfs_strhash(relpath, pathlen);
+  uint8_t *hasharr = NULL;
+  uint8_t hashlen;
+  FAR struct mfs_finfo *entry = NULL;
+  uint8_t i;
+
+  list_for_every_entry(&MFS_OFILES(sb), entry, struct mfs_finfo, list) {
+    if(entry->path_hash == path_hash) {
+      if(!hasharr) {
+        hashlen = mfs_path_hash(relpath, pathlen, hasharr);
+      }
+
+      if(entry->pathlen != hashlen) {
+        continue;
+      }
+
+      for(i = 0; i < hashlen; i++) {
+        if(entry->path[i] != hasharr[i]) {
+          goto next;
+        }
+      }
+
+      /* If we're here, we know we got a match. */
+      free(hasharr);
+      return 1;
+
+next:;
+    }
+  }
+
+  free(hasharr);
   return 0;
 }
 
@@ -41,7 +77,7 @@ int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
 
   nxmutex_lock(&sb->fs_lock);
 
-  ret = mfs_probe_direntries_r(&parent, &child, relpath, pathlen, &hasharr);
+  ret = mfs_probe_direntries_r(sb, &parent, &child, relpath, pathlen, hasharr);
   if(ret != OK) {
     ret = -ENOENT;
     goto errout_with_lock;
@@ -242,4 +278,14 @@ int mfs_f_trunc(FAR const struct file * const fp, const off_t len)
 errout:
   free(tmpbuf);
   return ret;
+}
+
+/* Updates journal about a move by making an entry for each item in the
+path. Most probably from the bottom of the tree to the top.
+
+TODO: Think on this.*/
+int mfs_f_updfpos(FAR const char * const relpath, const mfs_t relpathlen,
+                  const mfs_t new_lastpg)
+{
+  return 0;
 }

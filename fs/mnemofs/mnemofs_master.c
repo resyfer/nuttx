@@ -94,14 +94,14 @@ int save_master_log(struct mfs_sb_info *sb, uint32_t new_master) {
   /* master block logs are 40 bits in size, which is way less
   than usual page size. */
 
-  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(sb, blks[MB_PRIM]) + mb_pg_idx, 0);
+  ret = mnemofs_write_data(data, len, MFS_BLK2PG(sb, blks[MB_PRIM]) + mb_pg_idx, 0);
   if(ret < 0) {
     goto errout_with_data;
   }
   
   mb_pg_idx++;
   
-  ret = mnemofs_write_data(data, len, MNEMOFS_BLK_T_PG(sb, blks[MB_SEC]) + mb_pg_idx, 0);
+  ret = mnemofs_write_data(data, len, MFS_BLK2PG(sb, blks[MB_SEC]) + mb_pg_idx, 0);
   if(ret < 0) {
     goto errout_with_data;
   }
@@ -124,7 +124,7 @@ int32_t get_master_blk(struct mfs_sb_info *sb) {
   }
 
   ret = mnemofs_read_data(data, sb->pg_sz,
-                      MNEMOFS_BLK_T_PG(sb, blks[MB_PRIM]) + (mb_pg_idx - 1), 0);
+                      MFS_BLK2PG(sb, blks[MB_PRIM]) + (mb_pg_idx - 1), 0);
   if(ret < 0) {
     goto errout_with_data;
   }

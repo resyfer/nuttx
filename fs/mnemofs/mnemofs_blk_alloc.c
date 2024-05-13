@@ -1,122 +1,123 @@
-/****************************************************************************
- * fs/mnemofs/mnemofs_blk_alloc.c
- * Block ALlocator for mnemofs
- *
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.  The
- * ASF licenses this file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance with the
- * License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
- * License for the specific language governing permissions and limitations
- * under the License.
- *
- ****************************************************************************/
-
-/****************************************************************************
- * Included Files
- ****************************************************************************/
-
 #include <nuttx/mtd/nand.h>
 
 #include "mnemofs.h"
 
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Private Types
- ****************************************************************************/
+typedef void mfs_clist; /* TODO: Replace with a proper type */
 
 enum chk_color {
-  RED,
-  BLACK
+  RED = 0,
+  BLACK = 1,
 };
 
-struct chk_node {
-  uint8_t   color: 1;
-  uint8_t   __res1: 1;
-  uint16_t  chk_no: 14;
-  uint16_t  chk_wear;
-  
-  uint8_t   __res2: 1;
-  uint16_t chk_rb_left: 14;
-  uint8_t   __res3: 1;
-  uint16_t chk_rb_right: 14;
-  
-  uint8_t   __res4: 1;
-  uint16_t chk_hp_left: 14;
-  uint8_t   __res5: 1;
-  uint16_t chk_hp_right: 14;
+/* Chunks are 2^14 blocks. */
+#define MFS_LOG_CHKPBLK    (14) /* Chunks Per Block*/
+#define MFS_CHKSPBLK       (1 << MFS_LOG_CHKPBLK)
+#define MFS_CHK2BLK(chk)   ((chk) << MFS_LOG_CHKPBLK)
+#define MFS_BLK2CHK(blk)   ((blk) >> MFS_LOG_CHKPBLK)
+
+/* Let's use a splay tree */
+/* TODO: Need to think more about managing bad blocks. */
+struct mfs_blkallc_nd {
+  struct mfs_blkallc_nd *rst; /* Right Splay Tree*/
+  struct mfs_blkallc_nd *lst; /* Left Splay Tree*/
+  struct mfs_blkallc_nd *pst; /* Parent Splay Tree*/
+  struct mfs_blkallc_nd *rh; /* Right Heap */
+  struct mfs_blkallc_nd *lh; /* Left Heap */
+  struct mfs_blkallc_nd *ph; /* Parent Heap */
+  struct mfs_blkallc_nd *founder; /* The member of the block allocator this node belongs to now. */
+  mfs_clist *bad;
+  mfs_clist *wearh;
+  mfs_clist *wearl;
+
+  /* Data */
+  uint16_t chk; /* Chunk Number */
+  uint16_t twear;
 };
 
-struct blk_allc {
-  struct chk_node *free;
-  struct chk_node *part;
-  struct chk_node *full;
+struct mfs_blkallc {
+  struct mfs_blkallc_nd *free; /* Free */
+  struct mfs_blkallc_nd *pfree; /* Partially Free */
+  struct mfs_blkallc_nd *alloc; /* Allocated */
 };
 
-// TODO: Use this.
-// static struct blk_allc alloc;
+/* Compression */
 
-/****************************************************************************
- * Private Function Prototypes
- ****************************************************************************/
+uint32_t mfs_c_find(mfs_clist *l, uint32_t x) {
+  /* TODO */
+  return 0;
+}
 
-/****************************************************************************
- * Private Data
- ****************************************************************************/
+void mfs_c_rem(mfs_clist *l, uint32_t x) {
+  /* TODO */
 
-/****************************************************************************
- * Public Data
- ****************************************************************************/
+}
+
+void mfs_c_ins(mfs_clist *l, uint32_t x) {
+  /* TODO */
+
+}
+
+uint8_t mfs_c_get(mfs_clist *l, uint32_t x) {
+  /* TODO */
+  return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /* Initializes the block allocator and required memory */
-int mnemofs_blk_alloc_init(void)
+int mnemofs_blk_alloc_init(FAR struct mfs_sb_info * const sb)
 {
   /* TODO */
   return OK;
 }
 
 /* Free memory of block allocator. */
-int mnemofs_blk_alloc_exit(void)
+int mnemofs_blk_alloc_exit(FAR struct mfs_sb_info * const sb)
 {
   /* TODO */
   return OK;
 }
 
 /* TODO: Mark that the block is being used to write on it. mutex. */
-uint32_t mnemofs_get_blk(void) {
+uint32_t mfs_get_blk(FAR struct mfs_sb_info * const sb) {
   /* TODO */
   return 0;
 }
 
-uint32_t mnemofs_get_pg(void) {
+uint32_t mnemofs_get_pg(FAR struct mfs_sb_info * const sb) {
   /* TODO */
   return 0;
 }
 
 /* TODO: Mark that a block is full. Mostly used when block is written fully.
 This is useful especially for master nodes and journal nodes. */
-int mnemofs_blk_mark_full(uint32_t blk) {
+int mnemofs_blk_mark_full(FAR struct mfs_sb_info * const sb, uint32_t blk) {
   return OK;
 }
 
 /* Mark page for deletion */
 /* TODO: Implementation */
 /* TODO: Mutex */
-int mnemofs_pg_dlt(uint32_t pg) {
+int mnemofs_pg_dlt(FAR struct mfs_sb_info * const sb, uint32_t pg) {
   return OK;
 }
 
-int mnemofs_pg_mrkdlt(mfs_t pg) {
+int mnemofs_pg_mrkdlt(FAR struct mfs_sb_info * const sb, mfs_t pg) {
   return OK;
 }

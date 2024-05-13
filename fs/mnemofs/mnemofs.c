@@ -170,8 +170,7 @@ static int mnemofs_rename(FAR struct inode *mountpt,
 static int mnemofs_stat(FAR struct inode *mountpt, FAR const char *relpath,
                           FAR struct stat *buf)
 {
-  /* TODO */
-  return OK;
+  return mfs_d_stat(MFS_SB(mountpt), relpath, buf);
 }
 
 /* Dir Ops */

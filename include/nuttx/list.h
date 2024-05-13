@@ -349,4 +349,95 @@ static inline size_t list_length(FAR struct list_node *list)
   return cnt;
 }
 
+static inline void __list_splice(FAR const struct list_node *list,
+                                  FAR struct list_node *prev,
+                                  FAR struct list_node *next)
+{
+	struct list_node *first = list->next;
+	struct list_node *last = list->prev;
+
+	first->prev = prev;
+	prev->next = first;
+
+	last->next = next;
+	next->prev = last;
+}
+
+/**
+ * Name: list_splice
+ *
+ * Description:
+ *   Join two lists, this is designed for stacks.
+ *
+ * Arguments:
+ *   list - the new list to add.
+ *   head - the place to add it in the first list.
+ */
+static inline void list_splice(FAR const struct list_node *list,
+                              FAR struct list_node *head)
+{
+  if(!list_is_empty(list)) {
+    __list_splice(list, head, head->next);
+  }
+}
+
+/**
+ * Name: list_splice_tail
+ *
+ * Description:
+ *   Join two lists, each list being a queue
+ *
+ * Arguments:
+ *   list - the new list to add.
+ *   head - the place to add it in the first list.
+ */
+static inline void list_splice_tail(FAR struct list_node *list,
+				                            FAR struct list_node *head)
+{
+	if (!list_is_empty(list)) {
+		__list_splice(list, head->prev, head);
+  }
+}
+
+
+/**
+ * Name: list_splice_init
+ *
+ * Description:
+ *   Join two lists join two lists and reinitialise the emptied list. This
+ *   is designed for stacks.
+ *
+ * Arguments:
+ *   list - the new list to add.
+ *   head - the place to add it in the first list.
+ */
+static inline void list_splice_init(FAR struct list_node *list,
+                              FAR struct list_node *head)
+{
+  if(!list_is_empty(list)) {
+    __list_splice(list, head, head->next);
+    list_initialize(list);
+  }
+}
+
+/**
+ * Name: list_splice_tail_init
+ *
+ * Description:
+ *   Join two lists, each list being a queue, join two lists and reinitialise
+ *   the emptied list.
+ *
+ * Arguments:
+ *   list - the new list to add.
+ *   head - the place to add it in the first list.
+ */
+static inline void list_splice_tail_init(FAR struct list_node *list,
+				                            FAR struct list_node *head)
+{
+	if (!list_is_empty(list)) {
+		__list_splice(list, head->prev, head);
+    list_initialize(list);
+  }
+}
+
 #endif /* __INCLUDE_NUTTX_LIST_H */

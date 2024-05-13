@@ -24,6 +24,8 @@
  ****************************************************************************/
 
 #include <stddef.h>
+#include <sys/endian.h>
+
 #include "mnemofs.h"
 
 /****************************************************************************
@@ -138,4 +140,107 @@ uint8_t mfs_strhash(FAR const char *str, ssize_t len) {
   }
 
   return hash % (1 << 8);
+}
+
+/* Saves a datatype from CPU to Big Endian */
+void mfs_h2ben(FAR const uint8_t * const dt, ssize_t size,
+                FAR uint8_t * const bebuf)
+{
+#if BYTE_ORDER == LITTLE_ENDIAN
+  uint8_t i;
+  for(i = 0; i < size; i++) {
+    bebuf[i] = dt[size - 1 - i];
+  }
+#elif
+  memcpy(lebuf, dt, size);
+#endif
+}
+
+/* Sets next to point to the start of the next fs object in path and return
+len eg. if path is abcd/e/fgh, then it will return 4 and set pointer to e. */
+/* IMP: Return type imposes a condition that each FS object must be max 255 */
+/* It can be the case that path is /abcd/e/fgh/ and this, start here will be
+at 'a' and next will be at 'e', and the returned value would be 4.
+*/
+
+/* For the last element, next will point outside the range of path */
+uint8_t mfs_fsobj(FAR const char * const path, FAR const char ** start,
+                  FAR const char ** next)
+{
+  FAR const char * tmp = path;
+  uint8_t ret = 0;
+
+  if(predict_false(!tmp)) {
+    goto end;
+  }
+
+  while(*tmp && *tmp == '/') tmp++;
+
+  *start = tmp;
+
+  while(*tmp && *tmp != '/') {
+    tmp++;
+    ret++;
+  }
+
+  *next = tmp++;
+end:
+  return ret;
+}
+
+/* Get the hash of th very last FS object in path */
+char *mfs_fsobj_last(FAR const char * const path, const mfs_t pathlen)
+{
+  /* TODO */
+  return NULL;
+}
+
+/* Returns number of FS objects in the path. Doesn't check for the
+validity. */
+/* YAY! Another restriction on number of elements possible in path.
+Is changeable. */
+/* Counts windows of text that are separated by a / */
+uint8_t mfs_fsobj_pathcount(FAR const char * const path, const mfs_t pathlen)
+{
+  uint8_t ret = 0;
+  mfs_t i = 0;
+  uint8_t window = false;
+  while(i < pathlen)
+  {
+    if(window && path[i] == '/') {
+      window = false;
+      ret++;
+    } else if (!window && path[i] != '/') {
+      window = true;
+    }
+  }
+
+  if(window) {
+    ret++;
+  }
+
+  return ret;
+}
+
+/* Returns length of hasharr*/
+uint8_t mfs_path_hash(FAR const char *relpath, const mfs_t pathlen,
+                      FAR uint8_t * hasharr)
+{
+  FAR const char *start = relpath;
+  FAR const char *next = NULL;
+  uint8_t hasharr_idx = 0; /* Assumed uint8_t as length due to mfs_fsobj_pathcount */
+  mfs_off_t ret = 0;
+
+  while(start < relpath + pathlen) {
+    ret = mfs_fsobj(start, &start, &next);
+    if(ret < 0) {
+      return 0;
+    }
+
+    hasharr[hasharr_idx++] = mfs_strhash(start, ret);
+
+    start = next;
+  }
+
+  return hasharr_idx;
 }

@@ -240,6 +240,7 @@ int mfs_ctz_offinfo(FAR const struct mfs_sb_info * const sb,
   return 0;
 }
 
+/* TODO: Ensure this gives an error of -ENOENT when off > size. */
 int mfs_ctz_offpoint(FAR const struct mfs_sb_info * const sb,
                     FAR struct mfs_ctz_s * const l, mfs_t off,
                     mfs_off_t *blkoff)

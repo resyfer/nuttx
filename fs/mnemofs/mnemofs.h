@@ -36,23 +36,25 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MNEMOFS_JRNL_MAGIC  "-mnemoj-"
-#define MNEMOFS_MASTER_MAGIC  "-mnemon-"
+#define MNEMOFS_JRNL_MAGIC  "-mfs!j!-"
+#define MNEMOFS_MASTER_MAGIC  "-mfs!m!-"
 
 #define MNEMOFS_JOURNAL_N 20 /* TODO: option based on mount (saved into superblock )*/
-#define MNEMOFS_BLK_T_PG(sb, blk) ((blk) << sb->log_pg_in_blk)
-#define MNEMOFS_PG_T_BLK(sb, pg) ((pg) >> sb->log_pg_in_blk)
+#define MFS_BLK2PG(sb, blk) ((blk) << sb->log_pg_in_blk)
+#define MFS_PG2BLK(sb, pg) ((pg) >> sb->log_pg_in_blk)
 #define MNEMOFS_BLK_START(sb, pg) (MNEMOFS_BLK_T_PG(sb, MNEMOFS_PG_T_BLK(sb, pg)))
 #define MNEMOFS_BLK_END(sb, pg) (MNEMOFS_BLK_START(sb, pg) + sb->pg_in_blk - 1)
 
 #define MNEMOFS_PC_SZ 10
 #define MNEMOFS_MAX_ARGS 4 /* mnemofs_open */
+#define MFS_EMPTY_CTZ 0 /* Use for last_pg, other fields can be whatever. */
 
 #define MFS_SB(mountpt) ((struct mfs_sb_info *) (mountpt)->i_private) /* TODO: Add mountpt->i_private to contain mnemofs_sb_info. */
 #define MFS_PGSZ(sb)  ((sb)->pg_sz)
 #define MFS_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MFS_OFILES(sb)  ((sb)->f)
 #define MFS_ODIRS(sb)  ((sb)->d)
+#define MFS_JRNL(sb)  ((sb)->j)
 #define MFS_ROOT(sb)    ((sb)->root)
 
 typedef uint32_t  mfs_t;
@@ -60,6 +62,8 @@ typedef int32_t  mfs_off_t;
 
 struct mnemofs_direntry_info;
 struct mfs_finfo;
+struct mfs_blkallc;
+
 
 struct mfs_dentry {
   mode_t mode;
@@ -71,23 +75,33 @@ struct mfs_dentry {
   /* Probably needs a length. */
 };
 
+struct mfs_jrnl_state {
+  uint8_t n_blks; /* Does not consider master blocks. */
+  FAR mfs_t *idxarr;
+  mfs_t wr_s_pg; /* Writeable area start page */
+  mfs_t wr_s_blkidx; /* Writeable area start page */
+  mfs_t c_blkidx; /* Index of current block in idxarr */
+  mfs_t c_pg; /* Current page */
+  mfs_t c_pgoff; /* Current page offset */
+};
+
 struct mfs_sb_info {
   mutex_t fs_lock;
   const uint8_t pg_sz; /* In bytes */
+  const uint16_t blk_sz; /* In bytes */
+  uint8_t log_blk_sz;
   uint8_t log_pg_sz;
   uint8_t log_pg_in_blk;
   uint8_t pg_in_blk;
-  uint8_t jrnl_blks;
-  uint32_t master_node;
+  uint8_t j_nblks;
+  mfs_t master_node;
   struct inode root_ino;
-  struct mnemofs_file_info *f_s;
-  struct mnemofs_file_info *f_e;
-  struct mnemofs_fs_dirent *d_s; /* Start of open dirs */
-  struct mnemofs_fs_dirent *d_e; /* End of open dirs */
-
-  struct list_node f;
-  struct list_node d;
+  struct list_node f; /* Open files */
+  struct list_node d; /* Open directories */
+  struct list_node j; /* Journal (in-memory)*/
+  struct mfs_jrnl_state j_state; /* Journal State */
   struct mfs_dentry root;
+  struct mfs_blkallc *blkallc;
 };
 
 struct mnemofs_ctz_s {
@@ -114,19 +128,13 @@ ssize_t mnemofs_read_mfs_t(mfs_t *data, uint32_t page, uint8_t off);
 
 /* mnemofs_blk_alloc.c */
 
-uint32_t mnemofs_get_blk(void);
-uint32_t mnemofs_get_pg(void);
-int mnemofs_blk_mark_full(uint32_t blk);
-int mnemofs_pg_mrkdlt(mfs_t pg);
+uint32_t mfs_get_blk(FAR struct mfs_sb_info * const sb);
+uint32_t mnemofs_get_pg(FAR struct mfs_sb_info * const sb);
+int mnemofs_blk_mark_full(FAR struct mfs_sb_info * const sb, uint32_t blk);
+int mnemofs_pg_mrkdlt(FAR struct mfs_sb_info * const sb, mfs_t pg);
 
 /* mnemofs_journal.c */
-
-enum {
-  LOG_FILE,
-  LOG_DIR,
-  LOG_MASTER,
-  LOG_MAX,
-};
+int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb);
 
 /* mnemofs_master.c */
 
@@ -141,6 +149,23 @@ uint8_t mnemofs_chksm(char *data, int data_len);
 uint8_t mnemofs_two_x(uint32_t num);
 uint8_t mnemofs_log2(uint32_t num);
 uint8_t mfs_strhash(FAR const char *str, ssize_t len);
+uint8_t mfs_path_hash(FAR const char *relpath, const mfs_t pathlen,
+                      FAR uint8_t * hasharr);
+void mfs_h2ben(FAR const uint8_t * const dt, ssize_t size,
+                FAR uint8_t * const bebuf);
+uint8_t mfs_fsobj_pathcount(FAR const char * const path, const mfs_t pathlen);
+
+/* Swapping around once again */
+void mfs_be2hn(FAR const uint8_t * const dt, ssize_t size,
+                FAR uint8_t * const bebuf)
+{
+  mfs_h2ben(dt, size, bebuf);
+}
+
+uint8_t mfs_fsobj(FAR const char * const path, FAR const char ** start,
+                  FAR const char ** next);
+
+char *mfs_fsobj_last(FAR const char * const path, const mfs_t pathlen);
 
 /* Inline helper functions */
 
@@ -221,6 +246,12 @@ struct mfs_ctz_s {
   mutex_t l_lock; /* List lock */
 };
 
+/* This is how it will be stored on flash. */
+struct mfs_ctz_store_s {
+  mfs_t pg_e;
+  mfs_t idx_e;
+};
+
 /* TODO: list lock. */
 /* TODO: Remove access to functions that will not lock the list lock. */
 
@@ -288,6 +319,8 @@ struct mfs_finfo {
   /* TODO: Add all metadata here. */
 };
 
+uint8_t mfs_f_probeopen(FAR const struct mfs_sb_info * const sb,
+                        FAR const char *relpath, const mfs_t pathlen);
 int mfs_f_open(FAR struct file * const fp, FAR const char *relpath,
                 const int oflags, const mode_t mode);
 int mfs_f_close(FAR const struct file * const fp);
@@ -326,12 +359,13 @@ struct mfs_dinfo {
   /* TODO: Add all metadata here. */
 };
 
-int16_t mfs_probe_direntries_r(FAR struct mfs_dentry *parent,
+int mfs_probe_direntries_r(FAR const struct mfs_sb_info * const sb,
+                            FAR struct mfs_dentry *parent,
                             FAR struct mfs_dentry *child,
                             FAR const char *relpath, const mfs_t pathlen,
-                            FAR uint8_t ** hasharr);
-int mfs_d_create(FAR const struct mfs_sb_info * const sb,
-                FAR const char * const path, const mode_t mode);
+                            FAR uint8_t * hasharr);
+int mfs_d_create(FAR struct mfs_sb_info * const sb,
+                FAR const char * const relpath, const mode_t mode);
 int mfs_d_open(FAR struct mfs_sb_info * const sb,
               FAR const char * const relpath,
               FAR struct fs_dirent_s ** const dir);
@@ -349,5 +383,7 @@ int mfs_d_rm(FAR struct mfs_sb_info * const sb,
 int mfs_d_mv(FAR struct mfs_sb_info * const sb,
             FAR const char * const oldrelpath,
             FAR const char * const newrelpath);
+int mfs_d_stat(FAR struct mfs_sb_info * const sb, FAR const char * relpath,
+                FAR struct stat *buf);
 
 #endif /* __FS_MNEMOFS_MNEMOFS_H */
