@@ -5,4 +5,14 @@ config FS_MNEMOFS
 	---help---
 		Build the mnemofs file system.
 
+if FS_MNEMOFS
 
+config MNEMOFS_JRNL_MEM
+	bool "Keep a mirror of on-flash journal in memory."
+	default n
+	---help---
+		The on-flash journal of the file system will be kept in memory as well
+		and any updates will be done to both. This way the reads (traversals)
+		on the journal will be very fast at the cost of memory.
+
+endif # MNEMOFS

@@ -36,14 +36,16 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MNEMOFS_JRNL_MAGIC  "-mfs!j!-"
+#define MNEMOFS_JRNL_MAGIC  "mfs!j!-" /* 7B */
 #define MNEMOFS_MASTER_MAGIC  "-mfs!m!-"
 
 #define MNEMOFS_JOURNAL_N 20 /* TODO: option based on mount (saved into superblock )*/
-#define MFS_BLK2PG(sb, blk) ((blk) << sb->log_pg_in_blk)
-#define MFS_PG2BLK(sb, pg) ((pg) >> sb->log_pg_in_blk)
+#define MFS_BLK2PG(sb, blk) ((blk) << (sb)->log_pg_in_blk)
+#define MFS_PG2BLK(sb, pg) ((pg) >> (sb)->log_pg_in_blk)
+#define MFS_PG2BLKPGOFF(sb, pg) ((pg) % (1 << (sb)->log_pg_in_blk))
+#define MFS_OFF2BLKOFF(sb, off) ((off) % (sb->blk_sz))
 #define MNEMOFS_BLK_START(sb, pg) (MNEMOFS_BLK_T_PG(sb, MNEMOFS_PG_T_BLK(sb, pg)))
-#define MNEMOFS_BLK_END(sb, pg) (MNEMOFS_BLK_START(sb, pg) + sb->pg_in_blk - 1)
+#define MNEMOFS_BLK_END(sb, pg) (MNEMOFS_BLK_START(sb, pg) + (sb)->pg_in_blk - 1)
 
 #define MNEMOFS_PC_SZ 10
 #define MNEMOFS_MAX_ARGS 4 /* mnemofs_open */
@@ -75,14 +77,18 @@ struct mfs_dentry {
   /* Probably needs a length. */
 };
 
+/*
+  The actual wrtieable area starts from page wr_s_pg, and the index of the
+  block this page belongs to is given by idxarr[wr_s_blkidx].
+
+  TODO: Ensure mfs_jrnl_fmt does this.
+*/
 struct mfs_jrnl_state {
   uint8_t n_blks; /* Does not consider master blocks. */
   FAR mfs_t *idxarr;
-  mfs_t wr_s_pg; /* Writeable area start page */
-  mfs_t wr_s_blkidx; /* Writeable area start page */
-  mfs_t c_blkidx; /* Index of current block in idxarr */
-  mfs_t c_pg; /* Current page */
-  mfs_t c_pgoff; /* Current page offset */
+  mfs_t s_off; /* Writeable area start offset */
+  mfs_t w_off; /* Read pointer */
+  mfs_t r_off; /* Write pointer */
 };
 
 struct mfs_sb_info {
@@ -115,6 +121,11 @@ enum {
   MNEMOFS_DIR,
 };
 
+struct mfs_ctz_store_s {
+  mfs_t pg_e;
+  mfs_t idx_e;
+};
+
 /* mnemofs_nand.c */
 
 ssize_t mnemofs_write_page(char *data, uint64_t datalen, uint32_t page, uint8_t off);
@@ -134,7 +145,29 @@ int mnemofs_blk_mark_full(FAR struct mfs_sb_info * const sb, uint32_t blk);
 int mnemofs_pg_mrkdlt(FAR struct mfs_sb_info * const sb, mfs_t pg);
 
 /* mnemofs_journal.c */
+
+/* In-memory journal */
+struct mfs_jrnl_info {
+  struct list_node list;
+  mfs_t depth;
+  FAR struct mfs_ctz_store_s *path;
+  struct mfs_ctz_store_s new;
+};
+
 int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb);
+int mfs_jrnl_init(FAR struct mfs_sb_info * const sb, mfs_t blk,
+                  mfs_t *master_node);
+void mfs_jrnl_statereset(FAR struct mfs_sb_info * const sb);
+
+int mfs_jrnl_radv(FAR struct mfs_sb_info * const sb,
+                  FAR struct mfs_jrnl_info * info);
+int mfs_jrnl_wadv(FAR struct mfs_sb_info * const sb,
+                  FAR const struct mfs_jrnl_info * const info);
+int mfs_jrnl_nwadv(FAR struct mfs_sb_info * const sb,
+                  FAR struct list_node list);
+void mfs_jrml_updatectz(FAR struct mfs_sb_info * const sb,
+                        FAR struct mfs_ctz_store_s * const path,
+                        const mfs_t depth);
 
 /* mnemofs_master.c */
 
@@ -247,10 +280,6 @@ struct mfs_ctz_s {
 };
 
 /* This is how it will be stored on flash. */
-struct mfs_ctz_store_s {
-  mfs_t pg_e;
-  mfs_t idx_e;
-};
 
 /* TODO: list lock. */
 /* TODO: Remove access to functions that will not lock the list lock. */

@@ -60,33 +60,61 @@ right after the pointer to next node in the block. */
   Journal log on flash:
 
   struct mfs_jrnl_log {
+    mfs_t size; // Size of the entire log including this member
     mfs_t depth; // FS object count in pathlen
     struct mfs_ctz_store_s path[depth];
     struct mfs_ctz_store_s new;
-    uint8_t hash;
+    uint8_t hash; // Hash of the entire thing before this.
+    uint8_t magic[7];
   };
 
   path[depth-1] will give the old location.
 */
 
-/* In-memory journal */
-struct mfs_jrnl_info {
-  struct list_node list;
-  mfs_t depth;
-  FAR struct mfs_ctz_store_s *path;
-  struct mfs_ctz_store_s new;
-};
+/*
+  Journal on-flash has a structure like:
 
-/* For on-flash */
-#define MFS_J_DEPTH_OFF(node)  (0)
-#define MFS_J_PATH_OFF(node)   (MFS_J_DEPTH_OFF(node) + sizeof(mfs_t))
-#define MFS_J_NEW_OFF(node)    (MFS_J_PATH_OFF(node) + \
-                               (node->depth * sizeof(struct mfs_ctz_store_s)))
+  struct mfs_jrnl {
 
-/* Format a device with a journal */
+    union {
+      struct {
+        char magic[7];
+        uint8_t n_blocks;
+        char index_array[ceil((n_blocks * sizeof(mfs_t))/pg_sz)],
+        writeable_area[pg_sz - (ceil((n_blocks * sizeof(mfs_t))/pg_sz) + 1)]
+      },
+      char writeable_area[pg_sz];
+      char masterblocks[pg_sz];
+    }
+
+  };
+*/
+
+/* NOTE: Journal assumes no page is less than 16B in size for its initialization.
+         And assumes all page sizes are multiples of 4B. */
+
+/* TODO: On-flash offsets for the journal structure (index array, n_blks, etc.)*/
+
+/* For on-flash logs */
+#define MFS_JLOG_SZ_OFF          (0)
+#define MFS_JLOG_DEPTH_OFF       (MFS_JLOG_SZ_OFF + sizeof(mfs_t))
+#define MFS_JLOG_PATH_OFF        (MFS_JLOG_DEPTH_OFF + sizeof(mfs_t))
+#define MFS_JLOG_NEW_OFF(node)   (MFS_JLOG_PATH_OFF + \
+                                  ((node)->depth * \
+                                  sizeof(struct mfs_ctz_store_s)))
+#define MFS_JLOG_HASH_OFF(node)  (MFS_JLOG_NEW_OFF(node) + \
+                                  sizeof(struct mfs_ctz_store_s))
+#define MFS_JLOG_MAGIC_OFF(node) (MFS_JLOG_HASH_OFF(node) + 1)
+#define MFS_JLOG_SZ(node)        (MFS_JLOG_MAGIC_OFF(node) + 7)
+
+static int jrnl_off2details(FAR const struct mfs_sb_info * const sb, mfs_t off,
+                      mfs_t *blk, mfs_t *pg, mfs_t *pgoff);
+
+/* Mount */
+
+/* Format a device with a journal and initialize the state*/
 int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb)
 {
-
   int ret = OK;
   const uint8_t n_blks = sb->j_nblks; /* Not counting master blocks. */
   uint8_t idxarr_idx = 0;
@@ -94,7 +122,7 @@ int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb)
   mfs_t tmp;
   char *buf = NULL;
   const int idxarr_sz = (n_blks + 2) * sizeof(mfs_t);
-  const int buf_sz = idxarr_sz + 2;
+  const int buf_sz = idxarr_sz + 8;
   int i;
   mfs_t wr_s_pg; /* Start page of writeable area */
   mfs_t wr_s_blkidx; /* Index in idxarr of start of writeable area */
@@ -122,18 +150,21 @@ int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb)
     idxarr[idxarr_idx] = tmp;
   }
 
-  memcpy(buf, MNEMOFS_JRNL_MAGIC, 1);
-  memcpy(buf + 1, &idxarr_idx, 1);
-  memcpy(buf + 2, idxarr, idxarr_sz);
+  memcpy(buf, MNEMOFS_JRNL_MAGIC, 7);
+  memcpy(buf + 7, &idxarr_idx, 1);
+  memcpy(buf + 8, idxarr, idxarr_sz);
 
-  nxmutex_lock(&sb->fs_lock);  
+  /* Handles the case where the block size may be smaller than the buffer. */
+
   if(predict_true(sb->blk_sz >= buf_sz)) {
     mnemofs_write_data(buf, buf_sz, MFS_BLK2PG(sb, idxarr[0]), 0);
     wr_s_pg = MFS_BLK2PG(sb, idxarr[0]) +
               ((buf_sz + (sb->pg_sz - 1))/sb->pg_sz); /* ceil */
     wr_s_blkidx = 0;
   } else {
+
     /* Split between journal blocks if the array is bigger than a block. */
+
     tmp = 0;
     i = 0;
     wr_s_pg = MFS_BLK2PG(sb, idxarr[i]);
@@ -173,11 +204,9 @@ int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb)
   kmm_free(buf);
   sb->j_state.n_blks = n_blks;
   sb->j_state.idxarr = idxarr; /* Ownership transferred to sb */
-  sb->j_state.wr_s_pg = wr_s_pg;
-  sb->j_state.wr_s_blkidx = wr_s_blkidx;
-  sb->j_state.c_blkidx = wr_s_blkidx;
-  sb->j_state.c_pg = wr_s_pg;
-  sb->j_state.c_pgoff = 0;
+  sb->j_state.s_off = buf_sz;
+  sb->j_state.r_off = buf_sz;
+  sb->j_state.w_off = buf_sz;
 
   nxmutex_unlock(&sb->fs_lock);
   return ret;
@@ -200,8 +229,275 @@ int mfs_jrnl_init(FAR struct mfs_sb_info * const sb, mfs_t blk,
                   mfs_t *master_node)
 {
   int ret = OK;
+  char *buf = NULL;
+  char magic[7];
+  int idxarr_sz;
+  int buf_sz;
+  uint8_t i;
+  mfs_t tmp;
+  mfs_t pg;
 
-  /*!!!!!!!!!!!!!! TODO !!!!!!!!!!!!!*/
+  memset(&sb->j_state, 0, sizeof(sb->j_state));
+
+  nxmutex_lock(&sb->fs_lock);
+
+  mnemofs_read_data(magic, 7, MFS_BLK2PG(sb, blk), 0);
+  if(!strcmp(magic, MNEMOFS_JRNL_MAGIC))
+  {
+    ret = -1;
+    goto errout_with_lock;
+  }
+
+  mnemofs_read_data((char *) &sb->j_state.n_blks, 1, MFS_BLK2PG(sb, blk), 7);
+  idxarr_sz = (sb->j_state.n_blks + 2) * sizeof(mfs_t);
+  buf_sz = idxarr_sz + 8;
+
+  sb->j_state.idxarr = kmm_zalloc(idxarr_sz);
+  if(!sb->j_state.idxarr) {
+    ret = -ENOMEM;
+    goto errout_with_lock;
+  }
+
+  buf = kmm_zalloc(buf_sz);
+  if(!buf) {
+    ret = -ENOMEM;
+    goto errout_with_idxarr;
+  }
+
+  if(predict_true(sb->blk_sz >= buf_sz))
+  {
+    mnemofs_read_data(buf, buf_sz, MFS_BLK2PG(sb, blk), 0);
+
+    sb->j_state.idxarr = (mfs_t*) (buf + 8);
+  } else {
+    i = 0;
+    tmp = 0;
+    tmp += mnemofs_read_data(buf, sb->blk_sz, MFS_BLK2PG(sb, blk), 0);
+    sb->j_state.idxarr = (mfs_t *) (buf + 8);
+    i++;
+    while(tmp < buf_sz) {
+      pg = MFS_BLK2PG(sb, sb->j_state.idxarr[i]);
+      if(predict_true(tmp + sb->blk_sz < buf_sz)) {
+        mnemofs_read_data(buf, sb->blk_sz, pg, 0);
+      } else {
+        tmp = mnemofs_read_data(buf, buf_sz - tmp, pg, 0);
+        pg += ((tmp + (sb->pg_sz - 1))/sb->pg_sz);
+        break;
+      }
+      i++;
+    }
+  }
+
+  sb->j_state.s_off = buf_sz;
+  sb->j_state.r_off = buf_sz;
+  sb->j_state.w_off = buf_sz;
+
+  /* TODO: Need to traverse the journal from end to get sb->j_state.w_* */
+  nxmutex_unlock(&sb->fs_lock);
+  return ret;
+
+errout_with_idxarr:
+  kmm_free(sb->j_state.idxarr);
+  sb->j_state.idxarr = NULL;
+
+errout_with_lock:
+  nxmutex_unlock(&sb->fs_lock);
 
   return ret;
+}
+
+/* Traversal */
+
+/* Reset journal state to pre-traversal. */
+void mfs_jrnl_statereset(FAR struct mfs_sb_info * const sb)
+{
+  
+  nxmutex_lock(&sb->fs_lock);
+  sb->j_state.r_off = sb->j_state.s_off;
+  nxmutex_unlock(&sb->fs_lock);
+}
+
+/* Returns 1 for out of bounds. */
+static int jrnl_off2details(FAR const struct mfs_sb_info * const sb, mfs_t off,
+                      mfs_t *blk, mfs_t *pg, mfs_t *pgoff)
+{
+  mfs_t tmp;
+
+  if(sb->blk_sz * sb->j_nblks <= off) {
+    return 1;
+  }
+
+  tmp = off / sb->blk_sz;
+  *blk = sb->j_state.idxarr[tmp];
+  tmp = (off % sb->blk_sz) / sb->pg_sz;
+  *pg = MFS_BLK2PG(sb, *blk) + tmp;
+  *pgoff = off % sb->pg_sz;
+  return 0;
+}
+
+mfs_t static inline jrnl_blkremsz(FAR const struct mfs_sb_info * const sb,
+                    mfs_t pg, mfs_t pgoff)
+{
+  return sb->blk_sz - (MFS_PG2BLKPGOFF(sb, pg) * sb->pg_sz + pgoff);
+}
+
+/* Advance the read pointer to the next log. -1 if reached writable pointer. */
+int mfs_jrnl_radv(FAR struct mfs_sb_info * const sb,
+                  FAR struct mfs_jrnl_info * info)
+{
+  int ret = OK;
+  mfs_t blk;
+  mfs_t pg;
+  mfs_t pgoff;
+  mfs_t sz;
+  mfs_t rem_sz;
+  mfs_t rem_blk_sz;
+  char *buf = NULL;
+  char *tmp;
+
+  nxmutex_lock(&sb->fs_lock);
+
+  ret = jrnl_off2details(sb, sb->j_state.r_off, &blk, &pg, &pgoff);
+  if(ret != 0) {
+    goto errout;
+  }
+
+  mnemofs_read_page((char *) &sz, sizeof(mfs_t), pg, pgoff);
+  
+  if(predict_true(info != NULL)) {
+
+    buf = kmm_zalloc(sz);
+    rem_sz = sz;
+    tmp = buf;
+      
+    while(1) {
+      jrnl_off2details(sb, sb->j_state.w_off, &blk, &pg, &pgoff);
+      rem_blk_sz = jrnl_blkremsz(sb, pg, pgoff);
+      mnemofs_read_data(tmp, MFS_MIN(rem_blk_sz, rem_sz), pg, pgoff);
+      tmp += MFS_MIN(rem_blk_sz, rem_sz);
+      sb->j_state.w_off += MFS_MIN(rem_blk_sz, rem_sz);
+      
+      if(predict_false(rem_blk_sz > rem_sz)) {
+        break;
+      }
+    }
+
+    memcpy(buf + MFS_JLOG_DEPTH_OFF, &info->depth, sizeof(info->depth));
+    memcpy(buf + MFS_JLOG_PATH_OFF, &info->path, info->depth * sizeof(struct mfs_ctz_store_s));
+    memcpy(buf + MFS_JLOG_NEW_OFF(info), &info->new, sizeof(info->new));
+    list_initialize(&info->list);
+  }
+
+  if(predict_false(sb->j_state.r_off + sz > sb->j_state.w_off)) {
+    ret = -1;
+    goto errout;
+  }
+
+  sb->j_state.r_off += sz;
+
+errout:
+  nxmutex_unlock(&sb->fs_lock);
+  return ret;
+}
+
+/* Write */
+
+/* Can only advance the write pointer by writing a log. */
+int mfs_jrnl_wadv(FAR struct mfs_sb_info * const sb,
+                  FAR const struct mfs_jrnl_info * const info)
+{
+  int ret = OK;
+  mfs_t blk;
+  mfs_t pg;
+  mfs_t pgoff;
+  mfs_t rem_sz;
+  mfs_t rem_blk_sz;
+  char *buf = NULL;
+  char *tmp;
+  uint8_t hash;
+
+  if(info == NULL) {
+    ret = -1;
+    goto errout;
+  }
+
+  rem_sz = MFS_JLOG_SZ(info);
+  buf = kmm_zalloc(rem_sz);
+  if(!buf) {
+    ret = -ENOMEM;
+    goto errout;
+  }
+
+  memcpy(buf + MFS_JLOG_SZ_OFF, &rem_sz, sizeof(rem_sz));
+  memcpy(buf + MFS_JLOG_DEPTH_OFF, &info->depth, sizeof(info->depth));
+  memcpy(buf + MFS_JLOG_PATH_OFF, info->path, sizeof(info->path) * info->depth);
+  memcpy(buf + MFS_JLOG_NEW_OFF(info), &info->new, sizeof(info->new));
+  hash = mfs_strhash(buf, MFS_JLOG_HASH_OFF(info));
+  memcpy(buf + MFS_JLOG_HASH_OFF(info), &hash, 1);
+  memcpy(buf + MFS_JLOG_MAGIC_OFF(info), MNEMOFS_JRNL_MAGIC, 7);
+
+  tmp = buf;
+
+  nxmutex_lock(&sb->fs_lock);
+ 
+  while(1) {
+    jrnl_off2details(sb, sb->j_state.w_off, &blk, &pg, &pgoff);
+    rem_blk_sz = jrnl_blkremsz(sb, pg, pgoff);
+    mnemofs_write_data(tmp, MFS_MIN(rem_blk_sz, rem_sz), pg, pgoff);
+    tmp += MFS_MIN(rem_blk_sz, rem_sz);
+    sb->j_state.w_off += MFS_MIN(rem_blk_sz, rem_sz);
+    
+    if(predict_false(rem_blk_sz > rem_sz)) {
+      break;
+    }
+  }
+
+  kmm_free(buf);
+
+  nxmutex_unlock(&sb->fs_lock);
+
+errout:
+  return ret;
+}
+
+int mfs_jrnl_nwadv(FAR struct mfs_sb_info * const sb,
+                  FAR struct list_node list)
+{
+  struct mfs_jrnl_info *info = NULL;
+  int ret = 0;
+  int tmp;
+
+  list_for_every_entry(&list, info, struct mfs_jrnl_info, list) {
+    tmp = mfs_jrnl_wadv(sb, info);
+    if(tmp < 0) {
+      return ret;
+    }
+    ret++;
+  }
+  return ret;
+}
+
+void mfs_jrml_updatectz(FAR struct mfs_sb_info * const sb,
+                        FAR struct mfs_ctz_store_s * const path,
+                        const mfs_t depth)
+{
+  struct mfs_jrnl_info info;
+  struct mfs_ctz_store_s cur = path[depth-1];
+
+  nxmutex_lock(&sb->fs_lock);
+
+  mfs_jrnl_statereset(sb); /* Just to be sure */
+
+  while(mfs_jrnl_radv(sb, &info) > 0) {
+    if(info.depth == depth && info.path[depth-1].pg_e == cur.pg_e &&
+        info.path[depth-1].idx_e == cur.idx_e) {
+      cur = info.new;
+    }
+  }
+
+  mfs_jrnl_statereset(sb);
+  path[depth-1].idx_e = cur.idx_e;
+  path[depth-1].pg_e = cur.pg_e;
+
+  nxmutex_unlock(&sb->fs_lock);
 }
