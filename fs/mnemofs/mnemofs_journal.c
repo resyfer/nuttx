@@ -311,7 +311,6 @@ errout_with_lock:
 /* Reset journal state to pre-traversal. */
 void mfs_jrnl_statereset(FAR struct mfs_sb_info * const sb)
 {
-  
   nxmutex_lock(&sb->fs_lock);
   sb->j_state.r_off = sb->j_state.s_off;
   nxmutex_unlock(&sb->fs_lock);
