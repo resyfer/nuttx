@@ -4,24 +4,11 @@
 
 #include "mnemofs.h"
 
-/* UPDATE: Master block pointers will be stored in the last page of first block
-right after the pointer to next node in the block. */
-// struct jrnl_info {
-//   uint32_t  head_pg; /* Journal Head */
-//   uint32_t  rem_blks; /* Remaining blocks left after block with index excluding master blocks */
-//   uint32_t  idx_page; /* Page no. where to insert next log */
-//   uint32_t  mb_1; /* Master Block 1 */
-//   uint32_t  mb_2; /* Master Block 1 */
-// };
-
-
-//----------------------------------------------------------------------------
-
 /*
   Journal will have `sb->jrnl_nblks + 2` blocks.
   
-  The first block will start with a byte-long magic number that identifies a
-  journal of mnemofs.
+  The first block will start with a 7 byte-long magic number that identifies
+  a journal of mnemofs.
 
   Then another byte will be used to write the number of blocks in the journal.
   This is done so that, if the journal is found during mount, it will be
@@ -74,17 +61,16 @@ right after the pointer to next node in the block. */
 /*
   Journal on-flash has a structure like:
 
-  struct mfs_jrnl {
-
+  struct mfs_jrnl_node {
     union {
       struct {
         char magic[7];
         uint8_t n_blocks;
         char index_array[ceil((n_blocks * sizeof(mfs_t))/pg_sz)],
         writeable_area[pg_sz - (ceil((n_blocks * sizeof(mfs_t))/pg_sz) + 1)]
-      },
+      }, // First block.
       char writeable_area[pg_sz];
-      char masterblocks[pg_sz];
+      char masterblocks[pg_sz]; // Last two blocks.
     }
 
   };
@@ -318,7 +304,7 @@ void mfs_jrnl_statereset(FAR struct mfs_sb_info * const sb)
 
 /* Returns 1 for out of bounds. */
 static int jrnl_off2details(FAR const struct mfs_sb_info * const sb, mfs_t off,
-                      mfs_t *blk, mfs_t *pg, mfs_t *pgoff)
+                            mfs_t *blk, mfs_t *pg, mfs_t *pgoff)
 {
   mfs_t tmp;
 

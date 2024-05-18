@@ -108,6 +108,9 @@ struct mfs_sb_info {
   struct mfs_jrnl_state j_state; /* Journal State */
   struct mfs_dentry root;
   struct mfs_blkallc *blkallc;
+
+  /* Bitmaps */
+  unsigned char *del_bmap;
 };
 
 struct mnemofs_ctz_s {
