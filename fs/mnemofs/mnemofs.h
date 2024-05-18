@@ -36,7 +36,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MNEMOFS_JRNL_MAGIC  "mfs!j!-" /* 7B */
+#define MFS_JRNL_MAGIC  "mfs!j!-" /* 7B */
 #define MNEMOFS_MASTER_MAGIC  "-mfs!m!-"
 
 #define MNEMOFS_JOURNAL_N 20 /* TODO: option based on mount (saved into superblock )*/

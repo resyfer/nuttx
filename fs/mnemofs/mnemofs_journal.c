@@ -136,7 +136,7 @@ int mfs_jrnl_fmt(FAR struct mfs_sb_info * const sb)
     idxarr[idxarr_idx] = tmp;
   }
 
-  memcpy(buf, MNEMOFS_JRNL_MAGIC, 7);
+  memcpy(buf, MFS_JRNL_MAGIC, 7);
   memcpy(buf + 7, &idxarr_idx, 1);
   memcpy(buf + 8, idxarr, idxarr_sz);
 
@@ -228,7 +228,7 @@ int mfs_jrnl_init(FAR struct mfs_sb_info * const sb, mfs_t blk,
   nxmutex_lock(&sb->fs_lock);
 
   mnemofs_read_data(magic, 7, MFS_BLK2PG(sb, blk), 0);
-  if(!strcmp(magic, MNEMOFS_JRNL_MAGIC))
+  if(!strcmp(magic, MFS_JRNL_MAGIC))
   {
     ret = -1;
     goto errout_with_lock;
@@ -419,7 +419,7 @@ int mfs_jrnl_wadv(FAR struct mfs_sb_info * const sb,
   memcpy(buf + MFS_JLOG_NEW_OFF(info), &info->new, sizeof(info->new));
   hash = mfs_strhash(buf, MFS_JLOG_HASH_OFF(info));
   memcpy(buf + MFS_JLOG_HASH_OFF(info), &hash, 1);
-  memcpy(buf + MFS_JLOG_MAGIC_OFF(info), MNEMOFS_JRNL_MAGIC, 7);
+  memcpy(buf + MFS_JLOG_MAGIC_OFF(info), MFS_JRNL_MAGIC, 7);
 
   tmp = buf;
 
