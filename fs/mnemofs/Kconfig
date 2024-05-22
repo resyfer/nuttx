@@ -1,0 +1,6 @@
+config FS_MNEMOFS
+	bool "MNEMOFS File System"
+	default n
+	depends on !DISABLE_MOUNTPOINT
+	---help---
+		Build the mnemofs file system.
