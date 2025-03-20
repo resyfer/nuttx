@@ -65,16 +65,44 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+#define MFS_JRNL_NBLKS  20 /* TODO: Get from Kconfig */
+#define MFS_JRNL_MAGIC  0xBB9CDF70U
+#define MFS_JRNL_CHKSM  -(MFS_JRNL_MAGIC)
+
+#define MFS_MB_MAGIC    0xE9861B66U
+#define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
+
+#define MFS_JRNL(sb)    ((sb)->jrnl)
+#define MFS_PGSZ(sb)    ((sb)->pg_sz)
+#define MFS_BLKSZ(sb)    ((sb)->blk_sz)
+#define MFS_PGINBLK(sb) ((sb)->n_pg_in_blk)
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
 typedef uint32_t mfs_t;
 
+typedef struct
+{
+  mfs_t n_blks;   /* Excluding header and MBs */
+  mfs_t n_logs;   /* Number of logs already added. */
+  mfs_t jrnl_hd;
+  mfs_t t_logs;   /* Log capacity in jrnl. */
+  mfs_t rev;
+} mfs_jrnl_s;
+
 /* Superblock */
 
 typedef struct
 {
+  mfs_jrnl_s  jrnl;
+  mfs_t       pg_sz;
+  mfs_t       blk_sz;
+  mfs_t       n_pg_in_blk;
+  mfs_t       n_blks;
+  mfs_t       mb1;
+  mfs_t       mb2;
 } mfs_sb_s;
 
 /* Byte Location */
@@ -200,8 +228,30 @@ int mfs_rw_markbad(FAR const mfs_sb_s * sb, mfs_t blk);
  *
  ****************************************************************************/
 
-int mfs_rw_pgrd(FAR const mfs_sb_s * sb, const mfs_pgloc_t pg, FAR char *buf,
-                const mfs_t n_buf);
+int mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+                FAR char *buf, const mfs_t n_buf);
+
+/****************************************************************************
+ * Name: mfs_rw_pgrd
+ *
+ * Description:
+ *   Read a buffer from an offset into a page.
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   pg - The page
+ *   buf - The read buffer
+ *   n_buf - Length of buf
+ *   off   - Page offset
+ *
+ * Returned Value:
+ *   - 0 if OK.
+ *   - negative if error.
+ *
+ ****************************************************************************/
+
+int mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+                   FAR char *buf, const mfs_t n_buf, mfs_t off);
 
 /****************************************************************************
  * Name: mfs_rw_pgwr
@@ -221,8 +271,33 @@ int mfs_rw_pgrd(FAR const mfs_sb_s * sb, const mfs_pgloc_t pg, FAR char *buf,
  *
  ****************************************************************************/
 
-int mfs_rw_pgwr(FAR mfs_sb_s * sb, const mfs_pgloc_t pg, FAR const char *buf,
-                const mfs_t n_buf);
+int mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+                FAR const char *buf, const mfs_t n_buf);
+
+/****************************************************************************
+ * Name: mfs_rw_pgrd
+ *
+ * Description:
+ *   Write a buffer to an offset into a page.
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   pg - The page
+ *   buf - The read buffer
+ *   n_buf - Length of buf
+ *   off   - Page offset
+ *
+ * Returned Value:
+ *   - 0 if OK.
+ *   - negative if error.
+ *
+ * Assumptions/Limitations:
+ *   - Assumes the rest of the page will be empty as that's how NAND works.
+ *
+ ****************************************************************************/
+
+int mfs_rw_pgwroff(FAR mfs_sb_s * sb, const mfs_pgloc_t pg,
+                   FAR const char *buf, const mfs_t n_buf, mfs_t off);
 
 /****************************************************************************
  * Name: mfs_rw_blker
@@ -376,6 +451,27 @@ int mfs_ctz_off2idx(const mfs_t off, FAR mfs_t *idx);
 int mfs_alloc_getfreepg(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
 
 /****************************************************************************
+ * Name: mfs_alloc_getfreeblk
+ *
+ * Description:
+ *   Provide a free block, and mark it as being in use.
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   blk - The provided block
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if not.
+ *
+ * Assumptions/Limitations:
+ *   - Assumes Allocator is already initialized.
+ *
+ ****************************************************************************/
+
+int mfs_alloc_getfreeblk(FAR const mfs_sb_s *sb, FAR mfs_t *blk);
+
+/****************************************************************************
  * Name: mfs_alloc_markpgfree
  *
  * Description:
@@ -395,7 +491,28 @@ int mfs_alloc_getfreepg(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
  *
  ****************************************************************************/
 
-int mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
+int mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg);
+
+/****************************************************************************
+ * Name: mfs_alloc_markpgused
+ *
+ * Description:
+ *   Mark a page as used.
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   pg - The page
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ * Assumptions/Limitations:
+ *   - Use this only during initialization where the on-device data is read.
+ *
+ ****************************************************************************/
+
+int mfs_alloc_markpgused(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg);
 
 /****************************************************************************
  * Name: mfs_alloc_markblkfree
@@ -417,7 +534,28 @@ int mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
  *
  ****************************************************************************/
 
-int mfs_alloc_markblkfree(FAR mfs_sb_s *sb, FAR mfs_t *blk);
+int mfs_alloc_markblkfree(FAR mfs_sb_s *sb, FAR mfs_t blk);
+
+/****************************************************************************
+ * Name: mfs_alloc_markblkused
+ *
+ * Description:
+ *   Mark a block as used.
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   blk - The block number
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ * Assumptions/Limitations:
+ *   - Use this only during initialization where the on-device data is read.
+ *
+ ****************************************************************************/
+
+int mfs_alloc_markblkused(FAR mfs_sb_s *sb, FAR mfs_t blk);
 
 /****************************************************************************
  * Name: mfs_alloc_init
@@ -546,6 +684,30 @@ int mfs_jrnl_wr(FAR mfs_sb_s *sb, FAR const char *buf, mfs_t n_buf,
                 FAR mfs_ctz_s *ctz);
 
 /****************************************************************************
+ * Name: mfs_jrnl_latest
+ *
+ * Description:
+ *   Search the latest location of the journal on the device. Also clears
+ *   any left over journals (due to some kind of mid-flush powerloss).
+ *
+ * Input Parameters:
+ *   sb - Superblock
+ *   blk - Journal header block.
+ *   rev - Revision
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ * Assumptions/Limitations:
+ *   - This is used during the process of initializing journal.
+ *
+ ****************************************************************************/
+
+int
+mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev);
+
+/****************************************************************************
  * Name: mfs_jrnl_fmt
  *
  * Description:
@@ -553,9 +715,6 @@ int mfs_jrnl_wr(FAR mfs_sb_s *sb, FAR const char *buf, mfs_t n_buf,
  *
  * Input Parameters:
  *   sb - Superblock
- *   buf - Write buffer
- *   n_buf - Size of buf
- *   ctz - CTZ list
  *
  * Returned Value:
  *   - 0 if OK
@@ -568,7 +727,7 @@ int mfs_jrnl_wr(FAR mfs_sb_s *sb, FAR const char *buf, mfs_t n_buf,
  *
  ****************************************************************************/
 
-int mfs_jrnl_fmt(FAR mfs_sb_s *sb, mfs_t mb1, mfs_t mb2);
+int mfs_jrnl_fmt(FAR mfs_sb_s *sb);
 
 /****************************************************************************
  * Name: mfs_jrnl_init
@@ -579,6 +738,7 @@ int mfs_jrnl_fmt(FAR mfs_sb_s *sb, mfs_t mb1, mfs_t mb2);
  * Input Parameters:
  *   sb - Superblock
  *   blk - First block of journal
+ *   blk - Revision number of journal
  *
  * Returned Value:
  *   - 0 if OK
@@ -588,10 +748,12 @@ int mfs_jrnl_fmt(FAR mfs_sb_s *sb, mfs_t mb1, mfs_t mb2);
  *   - This belongs to the *_init group of functions, which are supposed to
  *     be used only in cases where the device is already formatted with
  *     mnemofs and the on-device data needs to be read and initialized.
+ *   - The latest journal has already been found and the revision number
+ *     obtained.
  *
  ****************************************************************************/
 
-int mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk);
+int mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev);
 
 /****************************************************************************
  * Name: mfs_jrnl_flush
@@ -622,14 +784,15 @@ int mfs_jrnl_flush(FAR mfs_sb_s *sb);
  *   Is the journal full.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb         - Superblock
+ *   new_log_sz - Size of the log to be added
  *
  * Returned Value:
  *   Boolean if the journal requires a flush.
  *
  ****************************************************************************/
 
-bool mfs_jrnl_isflushreq(FAR mfs_sb_s *sb);
+bool mfs_jrnl_isflushreq(FAR mfs_sb_s *sb, mfs_t new_log_sz);
 
 /* mnemofs_mb.c */
 
@@ -689,7 +852,7 @@ int mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
  *
  ****************************************************************************/
 
-int mfs_mb_fmt(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
+int mfs_mb_fmt(FAR mfs_sb_s *sb, const mfs_t mb1, const mfs_t mb2);
 
 /****************************************************************************
  * Name: mfs_mb_init

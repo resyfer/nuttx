@@ -104,8 +104,8 @@ mfs_rw_markbad(FAR const mfs_sb_s * sb, mfs_t blk)
 }
 
 int
-mfs_rw_pgrd(FAR const mfs_sb_s * sb, const mfs_pgloc_t pg, FAR char *buf,
-            const mfs_t n_buf)
+mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+            FAR char *buf, const mfs_t n_buf)
 {
   /* TODO */
 
@@ -113,8 +113,26 @@ mfs_rw_pgrd(FAR const mfs_sb_s * sb, const mfs_pgloc_t pg, FAR char *buf,
 }
 
 int
-mfs_rw_pgwr(FAR mfs_sb_s * sb, const mfs_pgloc_t pg, FAR const char *buf,
-            const mfs_t n_buf)
+mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+               FAR char *buf, const mfs_t n_buf, mfs_t off)
+{
+  /* TODO */
+
+  return 0;
+}
+
+int
+mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
+            FAR const char *buf, const mfs_t n_buf)
+{
+  /* TODO */
+
+  return 0;
+}
+
+int
+mfs_rw_pgwroff(FAR mfs_sb_s * sb, const mfs_pgloc_t pg, FAR const char *buf,
+               const mfs_t n_buf, mfs_t off)
 {
   /* TODO */
 

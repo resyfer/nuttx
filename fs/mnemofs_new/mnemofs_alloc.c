@@ -94,7 +94,7 @@ mfs_alloc_getfreepg(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg)
 }
 
 int
-mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg)
+mfs_alloc_getfreeblk(FAR const mfs_sb_s *sb, FAR mfs_t *blk)
 {
   /* TODO */
 
@@ -102,7 +102,31 @@ mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg)
 }
 
 int
-mfs_alloc_markblkfree(FAR mfs_sb_s *sb, FAR mfs_t *blk)
+mfs_alloc_markpgfree(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg)
+{
+  /* TODO */
+
+  return 0;
+}
+
+int
+mfs_alloc_markpgused(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg)
+{
+  /* TODO */
+
+  return 0;
+}
+
+int
+mfs_alloc_markblkfree(FAR mfs_sb_s *sb, FAR mfs_t blk)
+{
+  /* TODO */
+
+  return 0;
+}
+
+int
+mfs_alloc_markblkused(FAR mfs_sb_s *sb, FAR mfs_t blk)
 {
   /* TODO */
 

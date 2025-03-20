@@ -94,7 +94,7 @@ mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg)
 }
 
 int
-mfs_mb_fmt(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2)
+mfs_mb_fmt(FAR mfs_sb_s *sb, const mfs_t mb1, const mfs_t mb2)
 {
   /* TODO */
 
