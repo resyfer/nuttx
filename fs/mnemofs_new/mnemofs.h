@@ -60,14 +60,17 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/list.h>
 #include <nuttx/mtd/mtd.h>
+#include <stdint.h>
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MFS_JRNL_NBLKS  20 /* TODO: Get from Kconfig */
-#define MFS_JRNL_MAGIC  0xBB9CDF70U
-#define MFS_JRNL_CHKSM  -(MFS_JRNL_MAGIC)
+#define MFS_JRNL_NBLKS        20 /* TODO: Get from Kconfig */
+#define MFS_JRNL_MAGIC        0xBB9CDF70U
+#define MFS_JRNL_CHKSM        -(MFS_JRNL_MAGIC)
+#define MFS_JRNL_LOGSZ        64
+#define MFS_JRNL_BLKENTRYSZ   32
 
 #define MFS_MB_MAGIC    0xE9861B66U
 #define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
@@ -232,17 +235,16 @@ int mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
                 FAR char *buf, const mfs_t n_buf);
 
 /****************************************************************************
- * Name: mfs_rw_pgrd
+ * Name: mfs_rw_pgrdoff
  *
  * Description:
  *   Read a buffer from an offset into a page.
  *
  * Input Parameters:
  *   sb - Superblock
- *   pg - The page
+ *   b - Byte location
  *   buf - The read buffer
  *   n_buf - Length of buf
- *   off   - Page offset
  *
  * Returned Value:
  *   - 0 if OK.
@@ -250,8 +252,8 @@ int mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
  *
  ****************************************************************************/
 
-int mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
-                   FAR char *buf, const mfs_t n_buf, mfs_t off);
+int mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_bloc_t *b,
+                   FAR char *buf, const mfs_t n_buf);
 
 /****************************************************************************
  * Name: mfs_rw_pgwr
@@ -275,17 +277,16 @@ int mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
                 FAR const char *buf, const mfs_t n_buf);
 
 /****************************************************************************
- * Name: mfs_rw_pgrd
+ * Name: mfs_rw_pgwroff
  *
  * Description:
  *   Write a buffer to an offset into a page.
  *
  * Input Parameters:
  *   sb - Superblock
- *   pg - The page
+ *   b - Byte location
  *   buf - The read buffer
  *   n_buf - Length of buf
- *   off   - Page offset
  *
  * Returned Value:
  *   - 0 if OK.
@@ -296,8 +297,8 @@ int mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
  *
  ****************************************************************************/
 
-int mfs_rw_pgwroff(FAR mfs_sb_s * sb, const mfs_pgloc_t pg,
-                   FAR const char *buf, const mfs_t n_buf, mfs_t off);
+int mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
+                   FAR const char *buf, const mfs_t n_buf);
 
 /****************************************************************************
  * Name: mfs_rw_blker
@@ -1078,6 +1079,25 @@ bool mfs_dir_isdirend(FAR const mfs_sb_s *sb, FAR mfs_dir_s *dir);
  ****************************************************************************/
 
 int mfs_sb_init(FAR mfs_sb_s *sb);
+
+/* mnemofs_util.c */
+
+/****************************************************************************
+ * Name: mfs_calc_chksm16
+ *
+ * Description:
+ *   Calculate 16-bit checksum.
+ *
+ * Input Parameters:
+ *   buf - Buffer
+ *   n_buf - Size of buffer
+ *
+ * Returned Value:
+ *   Checksum
+ *
+ ****************************************************************************/
+
+uint16_t mfs_calc_chksm16(FAR char *buf, const mfs_t n_buf);
 
 #undef EXTERN
 #ifdef __cplusplus

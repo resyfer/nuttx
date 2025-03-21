@@ -1,6 +1,5 @@
 /****************************************************************************
- * fs/mnemofs_new/mnemofs_rw.c
- * Raw rw functions for mnemofs.
+ * fs/mnemofs_new/mnemofs_util.c
  *
  * SPDX-License-Identifier: Apache-2.0 or BSD-3-Clause
  *
@@ -55,8 +54,6 @@
  * Included Files
  ****************************************************************************/
 
-#include <stdbool.h>
-
 #include "mnemofs.h"
 
 /****************************************************************************
@@ -87,60 +84,8 @@
  * Public Functions
  ****************************************************************************/
 
-int
-mfs_rw_isbad(FAR const mfs_sb_s * sb, mfs_t blk)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_markbad(FAR const mfs_sb_s * sb, mfs_t blk)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
-            FAR char *buf, const mfs_t n_buf)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_bloc_t *b,
-               FAR char *buf, const mfs_t n_buf)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
-            FAR const char *buf, const mfs_t n_buf)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
-               FAR const char *buf, const mfs_t n_buf)
-{
-  /* TODO */
-
-  return 0;
-}
-
-int
-mfs_rw_blker(FAR mfs_sb_s * sb, const mfs_t blk)
+uint16_t
+mfs_calc_chksm16(FAR char *buf, const mfs_t n_buf)
 {
   /* TODO */
 

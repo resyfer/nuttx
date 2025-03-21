@@ -59,5 +59,6 @@ if(CONFIG_FS_MNEMOFS_NEW)
             mnemofs_jrnl.c
             mnemofs_mb.c
             mnemofs_rw.c
-            mnemofs_sb.c)
+            mnemofs_sb.c
+            mnemofs_util.c)
 endif()

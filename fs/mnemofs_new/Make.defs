@@ -63,6 +63,7 @@ CSRCS += mnemofs_jrnl.c
 CSRCS += mnemofs_mb.c
 CSRCS += mnemofs_rw.c
 CSRCS += mnemofs_sb.c
+CSRCS += mnemofs_util.c
 
 # Add the mnemofs directory to the build
 

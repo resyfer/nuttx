@@ -56,7 +56,6 @@
  ****************************************************************************/
 
 #include <assert.h>
-#include <cerrno>
 #include <nuttx/fs/fs.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -148,9 +147,9 @@ static int
 jrnl_fmt_pg0(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg, const mfs_t mb1,
              const mfs_t mb2, const mfs_t rev)
 {
-  int ret = OK;
-  const mfs_t n_buf = 80;
-  char buf[n_buf];
+  int         ret         = OK;
+  const mfs_t n_buf       = 80;
+  char        buf[n_buf];
 
   memset(buf, 0, n_buf);
 
@@ -195,17 +194,17 @@ jrnl_fmt_pg0(FAR mfs_sb_s *sb, FAR mfs_pgloc_t *pg, const mfs_t mb1,
 static int
 get_jrnl_rev(FAR mfs_sb_s *sb, const mfs_t blk, FAR mfs_t *rev)
 {
-  int ret = OK;
+  int         ret         = OK;
   mfs_pgloc_t pg;
-  mfs_t magic1;
-  mfs_t chksm1;
-  mfs_t magic2;
-  mfs_t chksm2;
-  const mfs_t n_buf = 80;
-  char buf[n_buf];
-  mfs_t _rev;
+  mfs_t       magic1;
+  mfs_t       chksm1;
+  mfs_t       magic2;
+  mfs_t       chksm2;
+  const mfs_t n_buf       = 80;
+  char        buf[n_buf];
+  mfs_t       _rev;
 
-  pg.blk = blk;
+  pg.blk      = blk;
   pg.blk_off = 0;
 
   memset(buf, 0, n_buf);
@@ -223,7 +222,7 @@ get_jrnl_rev(FAR mfs_sb_s *sb, const mfs_t blk, FAR mfs_t *rev)
   sscanf(buf + 72, "%08X", &chksm2);
 
   if (magic1 == MFS_JRNL_MAGIC && chksm1 == MFS_JRNL_CHKSM &&
-    magic2 == MFS_JRNL_MAGIC && chksm2 == MFS_JRNL_CHKSM)
+      magic2 == MFS_JRNL_MAGIC && chksm2 == MFS_JRNL_CHKSM)
     {
       ret = 1;
       goto errout;
@@ -234,6 +233,7 @@ get_jrnl_rev(FAR mfs_sb_s *sb, const mfs_t blk, FAR mfs_t *rev)
   return OK;
 
 errout:
+  *rev = 0;
   return ret;
 }
 
@@ -326,28 +326,290 @@ mfs_jrnl_isflushreq(FAR mfs_sb_s *sb, mfs_t new_log_sz)
  */
 
 int
-mfs_jrnl_clearold(FAR mfs_sb_s *sb, const mfs_t o_blk)
+rd_jrnl_log(FAR mfs_sb_s *sb, FAR const mfs_bloc_t *b, FAR mfs_ctz_s *o_ctz,
+            FAR mfs_ctz_s *n_ctz, FAR mfs_ctz_s *p_ctz, FAR bool *flush)
 {
-  int ret = OK;
+  int         ret         = OK;
+  mfs_t       _flush;
+  mfs_t       _res;
+  mfs_ctz_s   _o_ctz;
+  mfs_ctz_s   _n_ctz;
+  mfs_ctz_s   _p_ctz;
+  uint16_t    log_chksm;
+  uint16_t    _log_chksm;
+  const mfs_t n_buf       = MFS_JRNL_LOGSZ;
+  char        buf[n_buf];
 
-  /* TODO */
+  memset(buf, 0, n_buf);
 
-  /* This is used when we see multiple (at max 2) instances of journal
-   * on the device, and we want to remove the older one.
-   */
+  ret = mfs_rw_pgrdoff(sb, b, buf, n_buf);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  _log_chksm = mfs_calc_chksm16(buf, n_buf - 16);
+  sscanf(buf, "%04X%04X%04X%04X" \
+              "%04X%04X%04X%04X" \
+              "%04X%04X%04X%04X" \
+              "%016X%016X",
+              &_o_ctz.sz, &_o_ctz.e_pg.blk, &_o_ctz.e_pg.blk_off, &_res,
+              &_n_ctz.sz, &_n_ctz.e_pg.blk, &_n_ctz.e_pg.blk_off, &_res,
+              &_p_ctz.sz, &_p_ctz.e_pg.blk, &_p_ctz.e_pg.blk_off, &_res,
+              &log_chksm, &_flush);
+
+  if (_log_chksm != log_chksm)
+    {
+      ret = -EINVAL;
+      goto errout;
+    }
+
+  *flush = _flush;
+  *o_ctz = _o_ctz;
+  *n_ctz = _n_ctz;
+  *p_ctz = _p_ctz;
 
   return OK;
+
+errout:
+  return ret;
+}
+
+/* Return 1 if not journal block entry. */
+
+int
+rd_jrnl_blkentry(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg, FAR mfs_t *blk)
+{
+  int         ret = OK;
+  mfs_t       _blk;
+  mfs_t       magic;
+  mfs_t       jrnl_chksm;
+  uint16_t    log_chksm;
+  uint16_t    _log_chksm;
+  const mfs_t n_buf = MFS_JRNL_BLKENTRYSZ;
+  char        buf[n_buf];
+
+  memset(buf, 0, n_buf);
+
+  ret = mfs_rw_pgrd(sb, pg, buf, n_buf);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  _log_chksm = mfs_calc_chksm16(buf, n_buf - 8);
+  sscanf(buf, "%08X%08X%08X%08X", &magic, &jrnl_chksm, &_blk, &log_chksm);
+
+  if (magic != MFS_JRNL_MAGIC || jrnl_chksm != MFS_JRNL_CHKSM ||
+      _log_chksm != log_chksm)
+    {
+      ret = 1;
+      goto errout;
+    }
+
+  *blk = _blk;
+
+errout:
+  return OK;
+}
+
+int
+wr_jrnl_blkentry(FAR mfs_sb_s *sb, FAR const mfs_pgloc_t *pg,
+                 const mfs_t blk, FAR char *buf)
+{
+  int         ret       = OK;
+  const mfs_t n_buf     = MFS_JRNL_BLKENTRYSZ;
+  uint16_t    log_chksm;
+
+  memset(buf, 0, n_buf);
+
+  sprintf(buf, "%08X%08X%08X", MFS_JRNL_MAGIC, MFS_JRNL_CHKSM, blk);
+
+  log_chksm = mfs_calc_chksm16(buf, n_buf - 4);
+
+  sprintf(buf + n_buf - 4, "%08X", log_chksm);
+
+  return ret;
+}
+
+int
+rm_jrnl_flush_ext(FAR mfs_sb_s *sb, const mfs_t flash_blk)
+{
+  int         ret       = OK;
+  mfs_pgloc_t pg;
+  mfs_t       blk;
+  const mfs_t n_entries = MFS_PGINBLK(sb);
+
+  pg.blk = flash_blk;
+  for (mfs_t off = 0; off < n_entries; off++)
+    {
+      pg.blk_off = off;
+
+      ret = rd_jrnl_blkentry(sb, &pg, &blk);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+
+      ret = mfs_alloc_markblkfree(sb, blk);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+    }
+
+  ret = mfs_alloc_markblkfree(sb, flash_blk);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  return OK;
+
+errout:
+
+  /* TODO: To be extra safe, waive off any marked-for-erase blocks. */
+
+  return ret;
+}
+
+int
+jrnl_rdmb(FAR mfs_sb_s *sb, const mfs_t jrnl_hd, FAR mfs_t *mb1,
+          FAR mfs_t *mb2)
+{
+  int         ret         = OK;
+  mfs_t       _mb1;
+  mfs_t       _mb2;
+  mfs_t       magic;
+  mfs_t       chksm;
+  mfs_bloc_t  b;
+  const mfs_t n_buf       = 32;
+  char        buf[n_buf];
+
+  b.blk     = jrnl_hd;
+  b.blk_off = 0;
+  b.pg_off  = 48;
+
+  memset(buf, 0, n_buf);
+
+  ret = mfs_rw_pgrdoff(sb, &b, buf, n_buf);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  sscanf(buf, "%08X%08X%08X%08X", &_mb1, &_mb2, &magic, &chksm);
+
+  if (magic != MFS_JRNL_MAGIC || chksm != MFS_JRNL_CHKSM)
+    {
+      ret = -EINVAL;
+      goto errout;
+    }
+
+  *mb1 = _mb1;
+  *mb2 = _mb2;
+
+  return OK;
+
+errout:
+  return ret;
+}
+
+int
+mfs_jrnl_clearold(FAR mfs_sb_s *sb, const mfs_t o_blk)
+{
+  int         ret           = OK;
+  mfs_t       blk;
+  mfs_t       mb1;
+  mfs_t       mb2;
+  mfs_t       flash_ext_blk;
+  mfs_pgloc_t pg;
+
+  /* Remove flash extension. */
+
+  pg.blk      = o_blk;
+  pg.blk_off  = MFS_PGINBLK(sb) - 1;
+
+  ret = rd_jrnl_blkentry(sb, &pg, &flash_ext_blk);
+  if (ret != 0)
+    {
+      ret = rm_jrnl_flush_ext(sb, flash_ext_blk);
+
+      if (ret < 0)
+        {
+          goto errout;
+        }
+    }
+  else
+    {
+      /* Flash extension is not present. */
+    }
+
+  /* Remove the journal. */
+
+  for (mfs_t i = 1; i < MFS_PGINBLK(sb) - 1; i++)
+    {
+      pg.blk_off = i;
+
+      ret = rd_jrnl_blkentry(sb, &pg, &blk);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+
+      ret = mfs_alloc_markblkfree(sb, blk);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+    }
+
+  /* Clear associated master blocks. */
+
+  ret = jrnl_rdmb(sb, o_blk, &mb1, &mb2);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  ret = mfs_alloc_markblkfree(sb, mb1);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  ret = mfs_alloc_markblkfree(sb, mb2);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  /* Clear the journal header. */
+
+  ret = mfs_alloc_markblkfree(sb, o_blk);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  return OK;
+
+errout:
+
+  /* TODO: To be extra safe, waive off any marked-for-erase blocks. */
+
+  return ret;
 }
 
 int
 mfs_jrnl_fmt(FAR mfs_sb_s *sb)
 {
-  int ret = OK;
-  mfs_t jrnl_hd;
-  mfs_t mb1;
-  mfs_t mb2;
+  int         ret       = OK;
+  mfs_t       jrnl_hd;
+  mfs_t       mb1;
+  mfs_t       mb2;
   mfs_pgloc_t jrnl_pg0;
-  const mfs_t log_sz = 32;
+  const mfs_t log_sz    = 32;
 
   ret = mfs_alloc_getfreeblk(sb, &mb1);
   if (ret < 0)
@@ -367,8 +629,8 @@ mfs_jrnl_fmt(FAR mfs_sb_s *sb)
       goto errout_with_mb2;
     }
 
-  jrnl_pg0.blk = jrnl_hd;
-  jrnl_pg0.blk_off = 0;
+  jrnl_pg0.blk      = jrnl_hd;
+  jrnl_pg0.blk_off  = 0;
 
   /* Format the master blocks. */
 
@@ -410,10 +672,10 @@ errout:
 int
 mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev)
 {
-  int ret = OK;
-  mfs_t latest_rev = 0;
-  mfs_t latest_blk = 0; /* Blk 0 is reserved so this is safe. */
-  mfs_t _rev = 0;
+  int   ret         = OK;
+  mfs_t latest_rev  = 0;
+  mfs_t latest_blk  = 0; /* Blk 0 is reserved so this is safe. */
+  mfs_t _rev        = 0;
 
   for (mfs_t b = 0; b < sb->n_blks; b++)
     {
@@ -456,19 +718,19 @@ mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev)
 int
 mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev)
 {
-  int ret = OK;
-  mfs_t magic1;
-  mfs_t chksm1;
-  mfs_t magic2;
-  mfs_t chksm2;
-  mfs_t mb1;
-  mfs_t mb2;
-  mfs_t _rev;
-  mfs_t blk_sz;
-  mfs_t n_blks;
-  mfs_t pg_in_blk;
-  const mfs_t n_buf = 80;
-  char buf[n_buf];
+  int         ret         = OK;
+  mfs_t       magic1;
+  mfs_t       chksm1;
+  mfs_t       magic2;
+  mfs_t       chksm2;
+  mfs_t       mb1;
+  mfs_t       mb2;
+  mfs_t       _rev;
+  mfs_t       blk_sz;
+  mfs_t       n_blks;
+  mfs_t       pg_in_blk;
+  const mfs_t n_buf       = 80;
+  char        buf[n_buf];
   mfs_pgloc_t pg;
 
   /* We should have already verified that the journal header has proper
@@ -478,8 +740,8 @@ mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev)
 
   memset(buf, 0, n_buf);
 
-  pg.blk = blk;
-  pg.blk_off = 0;
+  pg.blk      = blk;
+  pg.blk_off  = 0;
   ret = mfs_rw_pgrd(sb, &pg, buf, n_buf);
   if (ret < 0)
     {
@@ -497,14 +759,14 @@ mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev)
               &mb1, &mb2,
               &magic2, &chksm2);
 
-  DEBUGASSERT(magic1 == MFS_JRNL_MAGIC);
-  DEBUGASSERT(chksm1 == MFS_JRNL_CHKSM);
-  DEBUGASSERT(_rev == rev);
-  DEBUGASSERT(blk_sz == MFS_BLKSZ(sb));
-  DEBUGASSERT(n_blks == sb->n_blks);
+  DEBUGASSERT(magic1    == MFS_JRNL_MAGIC);
+  DEBUGASSERT(chksm1    == MFS_JRNL_CHKSM);
+  DEBUGASSERT(_rev      == rev);
+  DEBUGASSERT(blk_sz    == MFS_BLKSZ(sb));
+  DEBUGASSERT(n_blks    == sb->n_blks);
   DEBUGASSERT(pg_in_blk == MFS_PGINBLK(sb));
-  DEBUGASSERT(magic2 == MFS_JRNL_MAGIC);
-  DEBUGASSERT(chksm2 == MFS_JRNL_CHKSM);
+  DEBUGASSERT(magic2    == MFS_JRNL_MAGIC);
+  DEBUGASSERT(chksm2    == MFS_JRNL_CHKSM);
 
   sb->mb1 = mb1;
   sb->mb2 = mb2;
