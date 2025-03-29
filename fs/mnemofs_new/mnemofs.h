@@ -66,19 +66,25 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define MFS_JRNL_NBLKS        20 /* TODO: Get from Kconfig */
 #define MFS_JRNL_MAGIC        0xBB9CDF70U
 #define MFS_JRNL_CHKSM        -(MFS_JRNL_MAGIC)
+#define MFS_JRNL_PG0SZ        80
 #define MFS_JRNL_LOGSZ        64
-#define MFS_JRNL_BLKENTRYSZ   32
+#define MFS_JRNL_BLKENTRYSZ   16
 
 #define MFS_MB_MAGIC    0xE9861B66U
 #define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
 
 #define MFS_JRNL(sb)    ((sb)->jrnl)
+#define MFS_MB(sb)      ((sb)->mb)
 #define MFS_PGSZ(sb)    ((sb)->pg_sz)
-#define MFS_BLKSZ(sb)    ((sb)->blk_sz)
+#define MFS_BLKSZ(sb)   ((sb)->blk_sz)
 #define MFS_PGINBLK(sb) ((sb)->n_pg_in_blk)
+#define MFS_LOGPGSZ     4
+
+#define MFS_CEILDIV(n, d)   (((n) + (d) - 1) / (d))
+#define MFS_MB_SET(bm, idx) ((bm)[(idx) / 8] |= (1 << ((idx) % 8)))
+#define MFS_MB_UNSET(bm, idx) ((bm)[(idx) / 8] &= ~(1 << ((idx) % 8)))
 
 /****************************************************************************
  * Public Types
@@ -88,18 +94,37 @@ typedef uint32_t mfs_t;
 
 typedef struct
 {
-  mfs_t n_blks;   /* Excluding header and MBs */
-  mfs_t n_logs;   /* Number of logs already added. */
+  mfs_t n_blks;          /* Excluding header and MBs */
+  mfs_t n_logs;          /* Number of logs already added. */
   mfs_t jrnl_hd;
-  mfs_t t_logs;   /* Log capacity in jrnl. */
+  mfs_t t_logs;          /* Log capacity in jrnl. */
   mfs_t rev;
+  mfs_t flush_hdr;       /* Location of flush extension. */
+  mfs_t flush_n_blks;
+  mfs_t flush_n_logs;
+  mfs_t flush_t_logs;
+  mfs_t flush_wr_idx;
+  char *jrnl_pg_buf;
+  mfs_t jrnl_pg_buf_idx;
+  mfs_t jrnl_wr_idx;
 } mfs_jrnl_s;
+
+typedef struct
+{
+  mfs_t sz;
+} mfs_mb_s;
+
+typedef struct
+{
+  char *pg_buf; /* TODO: Add just one step history. */
+} mfs_rw_s;
 
 /* Superblock */
 
 typedef struct
 {
   mfs_jrnl_s  jrnl;
+  mfs_mb_s    mb;
   mfs_t       pg_sz;
   mfs_t       blk_sz;
   mfs_t       n_pg_in_blk;
@@ -321,48 +346,6 @@ int mfs_rw_blker(FAR mfs_sb_s * sb, const mfs_t blk);
 /* mnemofs_ctz.c */
 
 /****************************************************************************
- * Name: mfs_ctz_wr
- *
- * Description:
- *   Write a buffer in the form of a CTZ, and provide the CTZ pointer.
- *
- * Input Parameters:
- *   sb - Superblock
- *   buf - The write buffer
- *   n_buf - Length of buf
- *   ctz - The pointer to CTZ list
- *
- * Returned Value:
- *   - 0 if not a bad block.
- *   - negative if error.
- *
- ****************************************************************************/
-
-int mfs_ctz_wr(FAR mfs_sb_s *sb, FAR const char *buf, mfs_t n_buf,
-               FAR mfs_ctz_s *ctz);
-
-/****************************************************************************
- * Name: mfs_ctz_rd
- *
- * Description:
- *   Read the data from a CTZ into a buffer.
- *
- * Input Parameters:
- *   sb - Superblock
- *   buf - The write buffer
- *   n_buf - Length of buf
- *   ctz - CTZ list
- *
- * Returned Value:
- *   - 0 if not a bad block.
- *   - negative if error.
- *
- ****************************************************************************/
-
-int mfs_ctz_rd(FAR const mfs_sb_s *sb, FAR char *buf, mfs_t n_buf,
-               FAR const mfs_ctz_s *ctz);
-
-/****************************************************************************
  * Name: mfs_ctz_jump
  *
  * Description:
@@ -380,7 +363,8 @@ int mfs_ctz_rd(FAR const mfs_sb_s *sb, FAR char *buf, mfs_t n_buf,
  *
  ****************************************************************************/
 
-int mfs_ctz_jump(FAR const mfs_sb_s *sb, mfs_t off, FAR mfs_pgloc_t *pg);
+int mfs_ctz_jump(FAR const mfs_sb_s *sb, const mfs_t off,
+                 FAR mfs_bloc_t *b, FAR mfs_t *idx);
 
 /****************************************************************************
  * Name: mfs_ctz_wroff
@@ -404,8 +388,9 @@ int mfs_ctz_jump(FAR const mfs_sb_s *sb, mfs_t off, FAR mfs_pgloc_t *pg);
  *
  ****************************************************************************/
 
-int mfs_ctz_wroff(FAR mfs_sb_s *sb, FAR char *buf, mfs_t n_buf,
-                  FAR const mfs_ctz_s *o_ctz, FAR mfs_ctz_s *n_ctz);
+int mfs_ctz_wroff(FAR mfs_sb_s *sb, FAR const char *buf, const mfs_t n_buf,
+                  const mfs_t off, FAR const mfs_ctz_s *o_ctz,
+                  FAR mfs_ctz_s *n_ctz);
 
 /****************************************************************************
  * Name: mfs_ctz_off2idx
@@ -633,80 +618,43 @@ int mfs_alloc_flush(FAR mfs_sb_s *sb);
 /* mnemofs_jrnl.c */
 
 /****************************************************************************
- * Name: mfs_jrnl_rd
+ * Name: mfs_jrnl_updatectz
  *
  * Description:
- *   Read data in a CTZ list and apply updates from the journal to it.
+ *   Update a CTZ obtained from the on-device FS by applying changes stored
+ *   in the journal.
  *
  * Input Parameters:
- *   sb - Superblock
- *   buf - Read buffer
- *   n_buf - Size of buf
- *   ctz - CTZ list
+ *   sb    - Superblock
+ *   ctz   - CTZ
+ *   p_ctz - Parent CTZ
  *
  * Returned Value:
  *   - 0 if OK
  *   - negative if error.
  *
- * Assumptions/Limitations:
- *   - This should only be done after journal is initialized/formatted.
- *
  ****************************************************************************/
 
-int mfs_jrnl_rd(FAR const mfs_sb_s *sb, FAR char *buf, mfs_t n_buf,
-                FAR const mfs_ctz_s *ctz);
+int mfs_jrnl_updatectz(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz,
+                       FAR mfs_ctz_s *p_ctz);
 
 /****************************************************************************
- * Name: mfs_jrnl_wr
+ * Name: mfs_jrnl_clearold
  *
  * Description:
- *   Write data in the form of a CTZ list through the journal.
- *
- *   If the journal is not full, this will just add a log into the journal.
- *   If it is full, it will flush the journal and then write it as a log to
- *   the journal.
+ *   Clear an old journal from the location on the device.
  *
  * Input Parameters:
- *   sb - Superblock
- *   buf - Write buffer
- *   n_buf - Size of buf
- *   ctz - CTZ list
+ *   sb    - Superblock
+ *   o_blk - Old journal header block number
  *
  * Returned Value:
  *   - 0 if OK
  *   - negative if error.
  *
- * Assumptions/Limitations:
- *   - This should only be done after journal is initialized/formatted.
- *
  ****************************************************************************/
 
-int mfs_jrnl_wr(FAR mfs_sb_s *sb, FAR const char *buf, mfs_t n_buf,
-                FAR mfs_ctz_s *ctz);
-
-/****************************************************************************
- * Name: mfs_jrnl_latest
- *
- * Description:
- *   Search the latest location of the journal on the device. Also clears
- *   any left over journals (due to some kind of mid-flush powerloss).
- *
- * Input Parameters:
- *   sb - Superblock
- *   blk - Journal header block.
- *   rev - Revision
- *
- * Returned Value:
- *   - 0 if OK
- *   - negative if error.
- *
- * Assumptions/Limitations:
- *   - This is used during the process of initializing journal.
- *
- ****************************************************************************/
-
-int
-mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev);
+int mfs_jrnl_clearold(FAR mfs_sb_s *sb, const mfs_t o_blk);
 
 /****************************************************************************
  * Name: mfs_jrnl_fmt
@@ -731,13 +679,36 @@ mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev);
 int mfs_jrnl_fmt(FAR mfs_sb_s *sb);
 
 /****************************************************************************
+ * Name: mfs_jrnl_latest
+ *
+ * Description:
+ *   Search the latest location of the journal on the device. Also clears
+ *   any left over journals (due to some kind of mid-flush powerloss).
+ *
+ * Input Parameters:
+ *   sb  - Superblock
+ *   blk - Journal header block.
+ *   rev - Revision
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ * Assumptions/Limitations:
+ *   - This is used during the process of initializing journal.
+ *
+ ****************************************************************************/
+
+int mfs_jrnl_latest(FAR mfs_sb_s *sb, FAR mfs_t *blk, FAR mfs_t *rev);
+
+/****************************************************************************
  * Name: mfs_jrnl_init
  *
  * Description:
  *   Intiialize a journal by reading it from the device.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb  - Superblock
  *   blk - First block of journal
  *   blk - Revision number of journal
  *
@@ -754,13 +725,16 @@ int mfs_jrnl_fmt(FAR mfs_sb_s *sb);
  *
  ****************************************************************************/
 
-int mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev);
+int mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk);
 
 /****************************************************************************
  * Name: mfs_jrnl_flush
  *
  * Description:
- *   Flush the journal when it is full.
+ *   Flush the journal on command.
+ *
+ *   Flush operation happens implicitly as needed, however, this is an
+ *   explicit call to the flush operation.
  *
  * Input Parameters:
  *   sb - Superblock
@@ -778,23 +752,6 @@ int mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk, mfs_t rev);
 
 int mfs_jrnl_flush(FAR mfs_sb_s *sb);
 
-/****************************************************************************
- * Name: mfs_jrnl_isflushreq
- *
- * Description:
- *   Is the journal full.
- *
- * Input Parameters:
- *   sb         - Superblock
- *   new_log_sz - Size of the log to be added
- *
- * Returned Value:
- *   Boolean if the journal requires a flush.
- *
- ****************************************************************************/
-
-bool mfs_jrnl_isflushreq(FAR mfs_sb_s *sb, mfs_t new_log_sz);
-
 /* mnemofs_mb.c */
 
 /****************************************************************************
@@ -810,7 +767,7 @@ bool mfs_jrnl_isflushreq(FAR mfs_sb_s *sb, mfs_t new_log_sz);
  *
  * Input Parameters:
  *   sb - Superblock
- *   pg - The page
+ *   ctz - CTZ of root
  *
  * Returned Value:
  *   - 0 if OK
@@ -818,7 +775,7 @@ bool mfs_jrnl_isflushreq(FAR mfs_sb_s *sb, mfs_t new_log_sz);
  *
  ****************************************************************************/
 
-int mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg);
+int mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_ctz_s *ctz);
 
 /****************************************************************************
  * Name: mfs_mb_fmt
@@ -935,6 +892,18 @@ int mfs_mb_mv(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
  ****************************************************************************/
 
 int mfs_mb_wr(FAR mfs_sb_s *sb, mfs_pgloc_t *pg);
+
+bool mfs_mb_isfull(FAR mfs_sb_s *sb);
+
+int mfs_mb_wrmn(FAR mfs_sb_s *sb, FAR const mfs_ctz_s *ctz);
+
+int mfs_mb_flush_wrmn(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2,
+                      FAR const mfs_ctz_s *ctz);
+
+int mfs_mb_allocblks(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
+
+int mfs_mb_freeblks(FAR mfs_sb_s *sb, FAR const mfs_t mb1,
+                    FAR const mfs_t mb2);
 
 /* mnemofs_dir.c */
 
@@ -1083,7 +1052,7 @@ int mfs_sb_init(FAR mfs_sb_s *sb);
 /* mnemofs_util.c */
 
 /****************************************************************************
- * Name: mfs_calc_chksm16
+ * Name: mfs_calc_chksm
  *
  * Description:
  *   Calculate 16-bit checksum.
@@ -1097,7 +1066,7 @@ int mfs_sb_init(FAR mfs_sb_s *sb);
  *
  ****************************************************************************/
 
-uint16_t mfs_calc_chksm16(FAR char *buf, const mfs_t n_buf);
+mfs_t mfs_calc_chksm(FAR const char *buf, const mfs_t n_buf);
 
 #undef EXTERN
 #ifdef __cplusplus

@@ -85,7 +85,7 @@
  ****************************************************************************/
 
 uint16_t
-mfs_calc_chksm16(FAR char *buf, const mfs_t n_buf)
+mfs_calc_chksm16(FAR const char *buf, const mfs_t n_buf)
 {
   /* TODO */
 

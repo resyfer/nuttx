@@ -86,7 +86,7 @@
  ****************************************************************************/
 
 int
-mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_pgloc_t *pg)
+mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_ctz_s *ctz)
 {
   /* TODO */
 
@@ -131,4 +131,85 @@ mfs_mb_wr(FAR mfs_sb_s *sb, mfs_pgloc_t *pg)
   /* TODO */
 
   return 0;
+}
+
+bool
+mfs_mb_isfull(FAR mfs_sb_s *sb)
+{
+  /* TODO */
+
+  return false;
+}
+
+int
+mfs_mb_wrmn(FAR mfs_sb_s *sb, FAR const mfs_ctz_s *ctz)
+{
+  int ret = OK;
+
+  /* TODO */
+
+  return ret;
+}
+
+int
+mfs_mb_flush_wrmn(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2,
+                  FAR const mfs_ctz_s *ctz)
+{
+  int ret = OK;
+
+  /* TODO */
+
+  /* Just writes the ctz, does not update sb. */
+
+  /* Updates mb1 and mb2 if need to shift has come. */
+
+  return ret;
+}
+
+int
+mfs_mb_allocblks(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2)
+{
+  int ret = OK;
+
+  ret = mfs_alloc_getfreeblk(sb, mb1);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  ret = mfs_alloc_getfreeblk(sb, mb2);
+  if (ret < 0)
+    {
+      goto errout_with_mb1;
+    }
+
+  return OK;
+
+errout_with_mb1:
+  mfs_alloc_markblkfree(sb, *mb1);
+  *mb2 = 0;
+
+errout:
+  *mb1 = 0;
+  return ret;
+}
+
+int
+mfs_mb_freeblks(FAR mfs_sb_s *sb, FAR const mfs_t mb1, FAR const mfs_t mb2)
+{
+  int ret = OK;
+  ret = mfs_alloc_markblkfree(sb, mb1);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  ret = mfs_alloc_markblkfree(sb, mb2);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+errout:
+  return ret;
 }
