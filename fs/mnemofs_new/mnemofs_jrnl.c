@@ -1840,6 +1840,8 @@ mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk)
   sb->n_blks      = n_blks;
   sb->n_pg_in_blk = pg_in_blk;
 
+  /* Get the count of valid journal logs on the device. */
+
   MFS_JRNL(sb).jrnl_hd = blk;
 
   idx = 0;

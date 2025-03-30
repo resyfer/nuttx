@@ -1055,7 +1055,11 @@ int mfs_sb_init(FAR mfs_sb_s *sb);
  * Name: mfs_calc_chksm
  *
  * Description:
- *   Calculate 16-bit checksum.
+ *   Calculate 32-bit checksum.
+ *
+ *   The goal is to have a hash function that is quick and spreads the
+ *   checksum evenly over the range of possible outputs. Further, the hash
+ *   of the default value (empty buffer) should not be a default value (0).
  *
  * Input Parameters:
  *   buf - Buffer

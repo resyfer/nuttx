@@ -94,34 +94,19 @@
 static inline mfs_t
 ctz(const uint32_t x)
 {
-  if (predict_false(x == 0))
-    {
-      /* Special case, since we're using this for the CTZ skip list. The 0th
-       * block has no pointers.
-       */
-
-      return 0;
-    }
-
+  DEBUGASSERT(x != 0);
   return __builtin_ctz(x);
 }
 
 static inline mfs_t
 clz(const uint32_t x)
 {
-  if (predict_false(x == UINT32_MAX))
-    {
-      /* Special case, since we're using this for the CTZ skip list. The 0th
-       * block has no pointers.
-       */
-
-      return 0;
-    }
-
+  DEBUGASSERT(x != UINT32_MAX);
   return __builtin_clz(x);
 }
 
-static inline mfs_t popcnt(mfs_t x)
+static inline mfs_t
+popcnt(mfs_t x)
 {
   return __builtin_popcount(x);
 }
@@ -129,9 +114,7 @@ static inline mfs_t popcnt(mfs_t x)
 static mfs_t
 ctz_idx_nptrs(const mfs_t idx)
 {
-  mfs_t ret;
-  ret = (idx == 0) ? 0 : ctz(idx) + 1;
-  return ret;
+  return (idx == 0) ? 0 : ctz(idx) + 1;
 }
 
 /* The size of data in B that can be fit inside a CTZ block at index `idx` */
@@ -139,9 +122,7 @@ ctz_idx_nptrs(const mfs_t idx)
 static mfs_t
 ctz_idxdatasz(FAR const mfs_sb_s * sb, const mfs_t idx)
 {
-  mfs_t ret;
-  ret = MFS_PGSZ(sb) - (ctz_idx_nptrs(idx) * MFS_LOGPGSZ);
-  return ret;
+  return MFS_PGSZ(sb) - (ctz_idx_nptrs(idx) * MFS_LOGPGSZ);
 }
 
 static void

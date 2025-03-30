@@ -55,6 +55,7 @@
  ****************************************************************************/
 
 #include "mnemofs.h"
+#include <stdlib.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -84,10 +85,22 @@
  * Public Functions
  ****************************************************************************/
 
-uint16_t
-mfs_calc_chksm16(FAR const char *buf, const mfs_t n_buf)
+mfs_t
+mfs_calc_chksm(FAR const char *buf, const mfs_t n_buf)
 {
-  /* TODO */
+  mfs_t       chksm   = 0;
+  mfs_t       term1;
+  mfs_t       term2;
+  mfs_t       product;
+  const mfs_t n       = n_buf / 2;
 
-  return 0;
+  for (mfs_t i = 0; i < n_buf; i++)
+    {
+      term1   = (buf[i] + i) % UINT32_MAX;
+      term2   = (buf[n_buf - i - 1] + (n_buf - i - 1)) % UINT32_MAX;
+      product = (term1 * term2) % UINT32_MAX;
+      chksm   += (product ^ (n - i)) << (i % 32);
+    }
+
+  return chksm;
 }
