@@ -85,6 +85,7 @@
 #define MFS_CEILDIV(n, d)   (((n) + (d) - 1) / (d))
 #define MFS_MB_SET(bm, idx) ((bm)[(idx) / 8] |= (1 << ((idx) % 8)))
 #define MFS_MB_UNSET(bm, idx) ((bm)[(idx) / 8] &= ~(1 << ((idx) % 8)))
+#define MFS_MIN(a, b)         ((a) < (b) ? (a) : (b))
 
 /****************************************************************************
  * Public Types
@@ -153,7 +154,7 @@ typedef struct
 typedef struct
 {
   mfs_pgloc_t e_pg; /* Location of last page. */
-  mfs_t sz;         /* Size of CTZ. */
+  mfs_t sz;         /* Size of CTZ. TODO: Change this to last index. */
 } mfs_ctz_s;
 
 /* Open directory structure */
@@ -346,44 +347,55 @@ int mfs_rw_blker(FAR mfs_sb_s * sb, const mfs_t blk);
 /* mnemofs_ctz.c */
 
 /****************************************************************************
- * Name: mfs_ctz_jump
+ * Name: mfs_ctz_travel
  *
  * Description:
- *   Provide the page details of the byte at a particular offset from the
- *   start in the CTZ list.
+ *   Travel from one known location (index and page is known) in the CTZ to
+ *   another unknown location with a known index.
+ *
+ *   This works only when the unknown location's index is lower than the =
+ *   known location's index due to the rules of CTZ skip lists.
  *
  * Input Parameters:
- *   sb - Superblock
- *   off - Offset
- *   pg - Page
+ *   sb    - Superblock
+ *   buf   - Read buffer
+ *   n_buf - Size of buffer
+ *   off   - Offset into the data
+ *   ctz   - CTZ skip list
  *
  * Returned Value:
- *   - 0 if not a bad block.
+ *   - 0 if OK.
  *   - negative if error.
  *
  ****************************************************************************/
 
-int mfs_ctz_jump(FAR const mfs_sb_s *sb, const mfs_t off,
-                 FAR mfs_bloc_t *b, FAR mfs_t *idx);
+int mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
+                   FAR const mfs_pgloc_t *s_pg, const mfs_t d_idx,
+                   FAR mfs_pgloc_t *d_pg);
 
 /****************************************************************************
  * Name: mfs_ctz_wroff
  *
  * Description:
- *   Update a CTZ with a buffer at a particular offset from start.
+ *   Write the data to an offset into a CTZ skip list and provides new CTZ
+ *   skip list.
  *
- *   Due to the way CTZ lists are, the pages that come before the offset's
- *   page will not be touched. However, all the following pages will have to
- *   be updated.
+ *   Due to the Copy-On-Write ideology, when an update is made to a CTZ skip
+ *   list, the list shifts its location. This is optimized to be as minimum
+ *   as possible, and all the pages BEFORE the page with `off` don't have to
+ *   be shifted. But all the following pages need to be shifted and have the
+ *   updated data and pointers.
  *
  * Input Parameters:
- *   sb - Superblock
- *   off - Offset
- *   o_ctz - Original CTZ
- *   n_ctz - Pointer to new CTZ
+ *   sb    - Superblock
+ *   buf   - Read buffer
+ *   n_buf - Size of buffer
+ *   off   - Offset into the data
+ *   o_ctz - Current (Old) CTZ skip list
+ *   n_ctz - New CTZ skip list
  *
  * Returned Value:
- *   - 0 if not a bad block.
+ *   - 0 if OK.
  *   - negative if error.
  *
  ****************************************************************************/
@@ -393,25 +405,46 @@ int mfs_ctz_wroff(FAR mfs_sb_s *sb, FAR const char *buf, const mfs_t n_buf,
                   FAR mfs_ctz_s *n_ctz);
 
 /****************************************************************************
- * Name: mfs_ctz_off2idx
+ * Name: mfs_ctz_rdoff
  *
  * Description:
- *   Get the index of the page in the CTZ list from the offset from start.
- *
- *   Can be used to find the total number of pages in the list by providing
- *   (sz - 1) as offset.
+ *   Read the data from an offset into a CTZ skip list.
  *
  * Input Parameters:
- *   off - Offset
- *   idx - Index of page.
+ *   sb    - Superblock
+ *   buf   - Read buffer
+ *   n_buf - Size of buffer
+ *   off   - Offset into the data
+ *   ctz   - CTZ skip list
  *
  * Returned Value:
- *   - 0 if not a bad block.
+ *   - 0 if OK.
  *   - negative if error.
  *
  ****************************************************************************/
 
-int mfs_ctz_off2idx(const mfs_t off, FAR mfs_t *idx);
+int mfs_ctz_rdoff(FAR mfs_sb_s *sb, FAR char *buf, mfs_t n_buf,
+                  const mfs_t off, FAR const mfs_ctz_s *ctz);
+
+/****************************************************************************
+ * Name: mfs_ctz_off2idx
+ *
+ * Description:
+ *   Find the index of an offset in a CTZ skip list.
+ *
+ *   This does not check if an index is actually present within a CTZ skip
+ *   list and will just return mathematically derived results.
+ *
+ * Input Parameters:
+ *   sb    - Superblock
+ *   off   - Offset into the data
+ *   idx   - Index
+ *   pgoff - Offset into the page.
+ *
+ ****************************************************************************/
+
+void mfs_ctz_off2idx(FAR const mfs_sb_s *sb, const mfs_t off, FAR mfs_t *idx,
+                     FAR mfs_t *pgoff);
 
 /* mnemofs_alloc.c */
 

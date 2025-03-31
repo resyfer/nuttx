@@ -59,6 +59,7 @@
 #include "mnemofs.h"
 #include <assert.h>
 #include <math.h>
+#include <nuttx/compiler.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +76,19 @@
  * Private Function Prototypes
  ****************************************************************************/
 
+static inline mfs_t ctz(const uint32_t x);
+
+static inline mfs_t clz(const uint32_t x);
+
+static inline mfs_t popcnt(mfs_t x);
+
+static mfs_t ctz_idx_nptrs(const mfs_t idx);
+
+static mfs_t ctz_idxdatasz(FAR const mfs_sb_s * sb, const mfs_t idx);
+
+static void mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
+                                 FAR mfs_t *pg_off, FAR mfs_t *idx);
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -87,10 +101,6 @@
  * Private Functions
  ****************************************************************************/
 
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
-
 static inline mfs_t
 ctz(const uint32_t x)
 {
@@ -101,8 +111,7 @@ ctz(const uint32_t x)
 static inline mfs_t
 clz(const uint32_t x)
 {
-  DEBUGASSERT(x != UINT32_MAX);
-  return __builtin_clz(x);
+  return x == UINT32_MAX ? 32 : __builtin_clz(x);
 }
 
 static inline mfs_t
@@ -116,8 +125,6 @@ ctz_idx_nptrs(const mfs_t idx)
 {
   return (idx == 0) ? 0 : ctz(idx) + 1;
 }
-
-/* The size of data in B that can be fit inside a CTZ block at index `idx` */
 
 static mfs_t
 ctz_idxdatasz(FAR const mfs_sb_s * sb, const mfs_t idx)
@@ -156,24 +163,67 @@ mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
 }
 
 mfs_t
+ctz_nptrs(const mfs_t idx)
+{
+  return (idx == 0) ? 0 : ctz(idx) + 1;
+}
+
+int
+apply_ctzptrs(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz, const mfs_t idx,
+              FAR char *pg_buf)
+{
+  int ret = OK;
+  mfs_t s_idx;
+  mfs_t n_ptrs;
+  mfs_t *mfs_pg_buf = (mfs_t *) pg_buf;
+  mfs_pgloc_t pg;
+
+  mfs_ctz_idx_from_off(sb, ctz->sz - 1, NULL, &s_idx);
+
+  DEBUGASSERT(idx <= s_idx + 1);
+
+  n_ptrs = ctz_nptrs(idx);
+
+  for (mfs_t i = 0; i < n_ptrs; i++)
+    {
+      DEBUGASSERT(idx >= pow(2, i));
+
+      ret = mfs_ctz_travel(sb, s_idx, &ctz->e_pg, idx - pow(2, i), &pg);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+
+      *(mfs_pg_buf - i - 1) = pg.blk * MFS_PGINBLK(sb) + pg.blk_off;
+    }
+
+errout:
+  return ret;
+}
+
+static mfs_t
 msb_idx(mfs_t n)
 {
-  return clz(n);
+  return 32 - clz(n) - 1;
 }
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
 
 int
 mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
                FAR const mfs_pgloc_t *s_pg, const mfs_t d_idx,
                FAR mfs_pgloc_t *d_pg)
 {
-  char  buf[5];
-  mfs_t idx;
-  mfs_t pow;
-  mfs_t diff;
-  mfs_t max_pow;
+  int        ret      = OK;
+  char       buf[5];
+  mfs_t      pg;
+  mfs_t      idx;
+  mfs_t      pow;
+  mfs_t      diff;
+  mfs_t      max_pow;
   mfs_bloc_t b;
-  int ret = OK;
-  mfs_t pg;
 
   d_pg->blk     = 0;
   d_pg->blk_off = 0;
@@ -181,7 +231,7 @@ mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
 
   /* Rising phase. */
 
-  max_pow   = (sizeof(mfs_t) * 8) - clz(s_idx ^ d_idx);
+  max_pow   = 32 - clz(s_idx ^ d_idx);
   idx       = s_idx;
   pow       = 1;
   b.blk     = s_pg->blk;
@@ -208,12 +258,6 @@ mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
         }
     }
 
-  if (idx == d_idx)
-    {
-      ret = -EINVAL;
-      return pg;
-    }
-
   /* Falling phase. */
 
   diff = idx - d_idx;
@@ -227,7 +271,8 @@ mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
           goto errout;
         }
 
-      pg        = strtoll(buf, NULL, 2);
+      memcpy(&pg, buf, 4);
+
       b.blk     = pg / MFS_PGINBLK(sb);
       b.blk_off = pg % MFS_PGINBLK(sb);
 
@@ -241,54 +286,10 @@ mfs_ctz_travel(FAR const mfs_sb_s * const sb, const mfs_t s_idx,
         }
     }
 
-  d_pg->blk = b.blk;
+  d_pg->blk     = b.blk;
   d_pg->blk_off = b.blk_off;
 
   return OK;
-
-errout:
-  return ret;
-}
-
-mfs_t
-ctz_nptrs(const mfs_t idx)
-{
-  if (idx == 0)
-    {
-      return 0;
-    }
-
-  return ctz(idx) + 1;
-}
-
-/* This assumes the index we are asking for  */
-
-int
-apply_ctzptrs(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz, const mfs_t idx,
-              FAR char *pg_buf)
-{
-  int ret = OK;
-  mfs_t s_idx;
-  mfs_t n_ptrs;
-  mfs_t *mfs_pg_buf = (mfs_t *) pg_buf;
-  mfs_pgloc_t pg;
-
-  mfs_ctz_idx_from_off(sb, ctz->sz - 1, NULL, &s_idx);
-
-  n_ptrs = ctz_nptrs(idx);
-
-  for (mfs_t i = 0; i < n_ptrs; i++)
-    {
-      DEBUGASSERT(idx >= pow(2, i));
-
-      ret = mfs_ctz_travel(sb, s_idx, &ctz->e_pg, idx - pow(2, i), &pg);
-      if (ret < 0)
-        {
-          goto errout;
-        }
-
-      *(mfs_pg_buf - i - 1) = pg.blk * MFS_PGINBLK(sb) + pg.blk_off;
-    }
 
 errout:
   return ret;
@@ -299,112 +300,269 @@ mfs_ctz_wroff(FAR mfs_sb_s *sb, FAR const char *buf, const mfs_t n_buf,
               const mfs_t off, FAR const mfs_ctz_s *o_ctz,
               FAR mfs_ctz_s *n_ctz)
 {
-  int ret = OK;
-  mfs_t s_idx;
-  mfs_t e_idx;
-  mfs_pgloc_t s_pg;
-  mfs_pgloc_t d_pg;
-  mfs_t pg_off;
-  char *pg_buf = NULL;
-  mfs_t buf_idx = 0;
-  mfs_t rem;
-  mfs_t data_sz;
-  mfs_ctz_s ctz;
+  int         ret               = OK;
+  bool        alloc             = true;
+  mfs_t       idx;
+  mfs_t       s_off;
+  mfs_t       e_off;
+  mfs_t       s_idx;
+  mfs_t       e_ctz_idx;
+  mfs_t       e_buf_idx;
+  mfs_t       data_sz;
+  mfs_t       n_blks;
+  mfs_t       buf_idx           = 0;
+  mfs_t       sz;
+  mfs_ctz_s   ctz;
+  mfs_pgloc_t pg;
+  const mfs_t n_pg_buf          = MFS_PGSZ(sb);
+  char        pg_buf[n_pg_buf];
 
   ctz = *o_ctz;
 
-  if (o_ctz->sz == 0)
+  /* If ctz sz is 0, then page is not written to. */
+
+  if (ctz.sz == 0)
     {
-      /* TODO:
-       * Here, the CTZ is not written yet, but the first page is allocated.
+      alloc = false;
+    }
+
+  mfs_ctz_idx_from_off(sb, off, &s_off,  &s_idx);
+  mfs_ctz_idx_from_off(sb, off + n_buf, &e_off,  &e_buf_idx);
+  mfs_ctz_idx_from_off(sb, ctz.sz - 1, NULL, &e_ctz_idx);
+
+  idx = s_idx;
+
+  /* PRE BUFFER (consider s_off) */
+
+  if (s_off != 0)
+    {
+      memset(pg_buf, 0, n_pg_buf);
+
+      /* Get location in old CTZ. */
+
+      mfs_ctz_travel(sb, e_ctz_idx, &o_ctz->e_pg, s_idx, &pg);
+      if (predict_false(ret < 0))
+        {
+          goto errout;
+        }
+
+      /* Read entire page. */
+
+      ret = mfs_rw_pgrd(sb, &pg, pg_buf, n_pg_buf);
+      if (predict_false(ret < 0))
+        {
+          goto errout;
+        }
+
+      /* Allocate new page for update. */
+
+      if (!alloc)
+        {
+          ret = mfs_alloc_getfreepg(sb, &pg);
+          if (predict_false(ret < 0))
+            {
+              goto errout;
+            }
+
+          alloc = true;
+        }
+
+      /* Copy the update. */
+
+      data_sz = ctz_idxdatasz(sb, s_idx);
+      sz = MFS_MIN(data_sz - s_off, n_buf);
+      memcpy(pg_buf + s_off, buf, sz);
+
+      if (sz)
+        {
+          DEBUGPANIC();
+          goto errout;
+        }
+
+      idx++;
+      buf_idx += sz;
+      ctz.sz += sz;
+      ctz.e_pg = pg;
+    }
+
+  /* BUFFER (neither consider s_off nor e_off) */
+
+  if (e_off != 0 && e_ctz_idx >= e_buf_idx)
+    {
+      /* We will handle last blk specially as it needs information from
+       * old CTZ.
        */
 
-      return OK;
+      n_blks = e_buf_idx - idx - 1;
+    }
+  else
+    {
+      n_blks = e_buf_idx - idx;
     }
 
-  /* Write to a CTZ at an offset, effectively updating it and set new ctz
-   * pointer (n_ctz).
-   */
-
-  mfs_ctz_idx_from_off(sb, o_ctz->sz - 1, NULL, &s_idx);
-  mfs_ctz_idx_from_off(sb, off, &pg_off, &e_idx);
-
-  s_pg = ctz.e_pg;
-  ret = mfs_ctz_travel(sb, s_idx, &s_pg, e_idx, &d_pg);
-  if (ret < 0)
+  for (mfs_t i = 0; i < n_blks; i++)
     {
-      goto errout;
+      memset(pg_buf, 0, n_pg_buf);
+
+      /* Allocate new page for udpate. */
+
+      if (!alloc)
+        {
+          ret = mfs_alloc_getfreepg(sb, &pg);
+          if (predict_false(ret < 0))
+            {
+              goto errout;
+            }
+
+          alloc = true;
+        }
+
+      ret = apply_ctzptrs(sb, &ctz, idx, pg_buf);
+      if (predict_false(ret < 0))
+        {
+          mfs_alloc_markpgfree(sb, &pg);
+          goto errout;
+        }
+
+      /* Copy buffer data */
+
+      data_sz = ctz_idxdatasz(sb, idx);
+      sz = MFS_MIN(data_sz, n_buf - buf_idx);
+      memcpy(pg_buf, buf + buf_idx, sz);
+
+      if (sz)
+        {
+          DEBUGPANIC();
+          goto errout;
+        }
+
+      /* Write */
+
+      ret = mfs_rw_pgwr(sb, &pg, pg_buf, n_pg_buf);
+      if (predict_false(ret < 0))
+        {
+          mfs_alloc_markpgfree(sb, &pg);
+          goto errout;
+        }
+
+      idx++;
+      buf_idx += sz;
+      ctz.sz += sz;
+      ctz.e_pg = pg;
     }
 
-  pg_buf = fs_heap_zalloc(MFS_PGSZ(sb));
-  if (pg_buf == NULL)
+  /* BUFFER (consider e_off) */
+
+  if (e_off != 0 && e_ctz_idx >= e_buf_idx)
     {
-      ret = -EINVAL;
-      goto errout;
+      memset(pg_buf, 0, n_pg_buf);
+
+      /* Read old data. */
+
+      ret = mfs_ctz_travel(sb, s_idx, &o_ctz->e_pg, idx, &pg);
+      if (predict_false(ret < 0))
+        {
+          goto errout;
+        }
+
+      ret = mfs_rw_pgrd(sb, &pg, pg_buf, n_pg_buf);
+      if (predict_false(ret < 0))
+        {
+          goto errout;
+        }
+
+      /* Allocate new page for udpate. */
+
+      if (!alloc)
+        {
+          ret = mfs_alloc_getfreepg(sb, &pg);
+          if (predict_false(ret < 0))
+            {
+              goto errout;
+            }
+
+          alloc = true;
+        }
+
+      ret = apply_ctzptrs(sb, &ctz, idx, pg_buf);
+      if (predict_false(ret < 0))
+        {
+          mfs_alloc_markpgfree(sb, &pg);
+          goto errout;
+        }
+
+      /* Apply new data */
+
+      data_sz = ctz_idxdatasz(sb, idx);
+      sz = MFS_MIN(data_sz, n_buf - buf_idx);
+      memcpy(pg_buf, buf + buf_idx, sz);
+
+      if (sz)
+        {
+          DEBUGPANIC();
+          goto errout;
+        }
+
+      idx++;
+      buf_idx += sz;
+      ctz.sz += sz;
+      ctz.e_pg = pg;
     }
 
-  if (pg_off != 0)
+  /* POST BUFFER */
+
+  if (e_ctz_idx > e_buf_idx)
     {
-      memcpy(pg_buf, buf, MFS_PGSZ(sb));
-      buf_idx += MFS_PGSZ(sb);
-      e_idx++;
+      n_blks = e_ctz_idx - idx;
 
-      ret = mfs_alloc_getfreepg(sb, &s_pg);
-      if (ret < 0)
+      for (mfs_t i = 0; i < n_blks; i++)
         {
-          goto errout;
+          ret = mfs_ctz_travel(sb, s_idx, &o_ctz->e_pg, idx, &pg);
+          if (predict_false(ret < 0))
+            {
+              goto errout;
+            }
+
+          ret = mfs_rw_pgrd(sb, &pg, pg_buf, n_pg_buf);
+          if (predict_false(ret < 0))
+            {
+              goto errout;
+            }
+
+          if (!alloc)
+            {
+              ret = mfs_alloc_getfreepg(sb, &pg);
+              if (predict_false(ret < 0))
+                {
+                  goto errout;
+                }
+
+              alloc = true;
+            }
+
+          ret = apply_ctzptrs(sb, &ctz, idx, pg_buf);
+          if (predict_false(ret < 0))
+            {
+              mfs_alloc_markpgfree(sb, &pg);
+              goto errout;
+            }
+
+          idx++;
+          buf_idx += n_pg_buf;
+          ctz.sz  += n_pg_buf;
+          ctz.e_pg = pg;
         }
-
-      ret = mfs_rw_pgwr(sb, &s_pg, pg_buf, MFS_PGSZ(sb));
-      if (ret < 0)
-        {
-          goto errout;
-        }
-
-      ctz.sz += MFS_PGSZ(sb);
-      ctz.e_pg = s_pg;
-    }
-
-  while (buf_idx < n_buf)
-    {
-      memset(pg_buf, 0, MFS_PGSZ(sb));
-
-      rem = n_buf - buf_idx;
-      data_sz = ctz_idxdatasz(sb, e_idx);
-
-      ret = apply_ctzptrs(sb, &ctz, e_idx, pg_buf);
-      if (ret < 0)
-        {
-          goto errout;
-        }
-
-      ret = mfs_alloc_getfreepg(sb, &s_pg);
-      if (ret < 0)
-        {
-          goto errout;
-        }
-
-      memcpy(pg_buf, buf + buf_idx, data_sz < rem ? data_sz : rem);
-
-      ret = mfs_rw_pgwr(sb, &s_pg, pg_buf, MFS_PGSZ(sb));
-      if (ret < 0)
-        {
-          goto errout;
-        }
-
-      ctz.sz += data_sz < rem ? data_sz : rem;
-      ctz.e_pg = s_pg;
     }
 
   *n_ctz = ctz;
-
   return OK;
+
+  /* NOTE: This does NOT update the journal. */
 
 errout:
 
   /* TODD: To be safe, mark for free all the pages allocated. */
 
-  fs_heap_free(pg_buf);
   return ret;
 }
 
@@ -412,15 +570,15 @@ int
 mfs_ctz_rdoff(FAR mfs_sb_s *sb, FAR char *buf, mfs_t n_buf, const mfs_t off,
               FAR const mfs_ctz_s *ctz)
 {
-  int ret = OK;
-  mfs_bloc_t b;
-  mfs_t idx;
-  mfs_t s_idx;
+  int         ret     = OK;
+  mfs_t       idx;
+  mfs_t       s_idx;
+  mfs_t       buf_idx = 0;
+  mfs_t       n_ptrs;
+  mfs_t       rem;
+  mfs_t       sz;
+  mfs_bloc_t  b;
   mfs_pgloc_t pg;
-  mfs_t buf_idx = 0;
-  mfs_t n_ptrs;
-  mfs_t rem;
-  mfs_t sz;
 
   mfs_ctz_idx_from_off(sb, ctz->sz - 1, &b.pg_off, &s_idx);
   mfs_ctz_idx_from_off(sb, off, &b.pg_off, &idx);
@@ -430,35 +588,37 @@ mfs_ctz_rdoff(FAR mfs_sb_s *sb, FAR char *buf, mfs_t n_buf, const mfs_t off,
   while (buf_idx < n_buf)
     {
       ret = mfs_ctz_travel(sb, s_idx, &ctz->e_pg, idx, &pg);
-      if (ret < 0)
+      if (predict_false(ret < 0))
         {
           goto errout;
         }
 
-      b.blk = pg.blk;
+      b.blk     = pg.blk;
       b.blk_off = pg.blk_off;
 
       n_ptrs = ctz_idx_nptrs(n_ptrs);
-      sz = ctz_idxdatasz(sb, idx);
+      sz     = ctz_idxdatasz(sb, idx);
 
       if (rem <= sz)
         {
-          ret = mfs_rw_pgrdoff(sb, &b, buf + buf_idx, rem);
-          rem = 0;
+          ret      = mfs_rw_pgrdoff(sb, &b, buf + buf_idx, rem);
+          buf_idx += rem;
+          rem      = 0;
         }
       else
         {
-          ret = mfs_rw_pgrdoff(sb, &b, buf + buf_idx, sz);
-          rem -= sz;
+          ret      = mfs_rw_pgrdoff(sb, &b, buf + buf_idx, sz);
+          buf_idx += sz;
+          rem     -= sz;
         }
 
-      if (ret < 0)
+      if (predict_false(ret < 0))
         {
           goto errout;
         }
 
       idx++;
-      b.pg_off = 0; /* Only valid for first page in CTZ. */
+      b.pg_off = 0; /* Only valid for first page that's read in CTZ. */
     }
 
   return OK;
@@ -467,12 +627,32 @@ errout:
   return ret;
 }
 
-int
-mfs_ctz_off2idx(const mfs_t sz, FAR mfs_t *idx)
+void
+mfs_ctz_off2idx(FAR const mfs_sb_s *sb, const mfs_t off, FAR mfs_t *idx,
+                FAR mfs_t *pgoff)
 {
-  /* TODO */
+  mfs_t       _idx;
+  const mfs_t wb  = sizeof(mfs_t);
+  const mfs_t den = MFS_PGSZ(sb) - 2 * wb;
 
-  /* Calculate Index of last page from size. */
+  if (off < den)
+    {
+      *idx = 0;
+      *pgoff = off;
+      return;
+    }
 
-  return 0;
+  if (predict_true(idx != NULL))
+    {
+      _idx   = (off - wb * (popcnt((off / den) - 1) + 2)) / den;
+      *idx   = _idx;
+    }
+
+  if (predict_true(idx != NULL && pgoff != NULL))
+    {
+      *pgoff = off
+               - den * (_idx)
+               - (wb * popcnt(_idx))
+               - ((ctz_idx_nptrs(_idx) * wb));
+    }
 }
