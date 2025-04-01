@@ -71,6 +71,7 @@
 #define MFS_JRNL_PG0SZ        80
 #define MFS_JRNL_LOGSZ        64
 #define MFS_JRNL_BLKENTRYSZ   16
+#define MFS_MN_SZ             24
 
 #define MFS_MB_MAGIC    0xE9861B66U
 #define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
@@ -85,9 +86,9 @@
 #define MFS_RW(sb)      ((sb)->rw)
 #define MFS_LOGPGSZ     4
 
-#define MFS_CEILDIV(n, d)   (((n) + (d) - 1) / (d))
-#define MFS_MB_SET(bm, idx) ((bm)[(idx) / 8] |= (1 << ((idx) % 8)))
-#define MFS_MB_UNSET(bm, idx) ((bm)[(idx) / 8] &= ~(1 << ((idx) % 8)))
+#define MFS_CEILDIV(n, d)     (((n) + (d) - 1) / (d))
+#define MFS_BM_SET(bm, idx)   ((bm)[(idx) / 8] |= (1 << ((idx) % 8)))
+#define MFS_BM_UNSET(bm, idx) ((bm)[(idx) / 8] &= ~(1 << ((idx) % 8)))
 #define MFS_MIN(a, b)         ((a) < (b) ? (a) : (b))
 
 /****************************************************************************
@@ -115,7 +116,9 @@ typedef struct
 
 typedef struct
 {
-  mfs_t sz;
+  mfs_t next_idx;
+  mfs_t mb1;
+  mfs_t mb2;
 } mfs_mb_s;
 
 typedef struct
@@ -133,8 +136,6 @@ typedef struct
   mfs_t       blk_sz;
   mfs_t       n_pg_in_blk;
   mfs_t       n_blks;
-  mfs_t       mb1;
-  mfs_t       mb2;
   FAR struct inode *drv;
   mfs_rw_s    rw;
 } mfs_sb_s;
@@ -814,29 +815,6 @@ int mfs_jrnl_flush(FAR mfs_sb_s *sb);
 /* mnemofs_mb.c */
 
 /****************************************************************************
- * Name: mfs_mb_getroot
- *
- * Description:
- *   Get the page containing the root of the file system.
- *
- *   The root is synonymous with the master node, and that's present in the
- *   last-written master node to the master block. Both master blocks have
- *   identical blocks (unless power failure prevents write to both, in which
- *   case, the power up intiialization should fix it).
- *
- * Input Parameters:
- *   sb - Superblock
- *   ctz - CTZ of root
- *
- * Returned Value:
- *   - 0 if OK
- *   - negative if error.
- *
- ****************************************************************************/
-
-int mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_ctz_s *ctz);
-
-/****************************************************************************
  * Name: mfs_mb_fmt
  *
  * Description:
@@ -852,7 +830,7 @@ int mfs_mb_getroot(FAR const mfs_sb_s *sb, FAR mfs_ctz_s *ctz);
  *   item which is added to the fs.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb  - Superblock
  *   mb1 - Master Block 1
  *   mb2 - Master Block 2
  *
@@ -907,13 +885,89 @@ int mfs_mb_fmt(FAR mfs_sb_s *sb, const mfs_t mb1, const mfs_t mb2);
 int mfs_mb_init(FAR mfs_sb_s *sb, const mfs_t mb1, const mfs_t mb2);
 
 /****************************************************************************
- * Name: mfs_mb_mv
+ * Name: mfs_mb_rd
  *
  * Description:
- *   Move master blocks.
+ *   Get the page containing the latest root of the file system.
+ *
+ *   The root is synonymous with the master node, and that's present in the
+ *   last-written master node to the master block. Both master blocks have
+ *   identical blocks (unless power failure prevents write to both, in which
+ *   case, the power up intiialization should fix it).
+ *
+ * Input Parameters:
+ *   sb  - Superblock
+ *   ctz - CTZ of root
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ ****************************************************************************/
+
+int mfs_mb_rd(FAR const mfs_sb_s *sb, FAR mfs_ctz_s *ctz);
+
+/****************************************************************************
+ * Name: mfs_mb_rd
+ *
+ * Description:
+ *   Write the latest master node.
+ *
+ * Input Parameters:
+ *   sb  - Superblock
+ *   ctz - CTZ of root
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ ****************************************************************************/
+
+int mfs_mb_wr(FAR mfs_sb_s *sb, FAR const mfs_ctz_s *ctz);
+
+/****************************************************************************
+ * Name: mfs_mb_isfull
+ *
+ * Description:
+ *   Is the master block full?
  *
  * Input Parameters:
  *   sb - Superblock
+ *
+ * Returned Value:
+ *   True if full, false if not.
+ *
+ ****************************************************************************/
+
+bool mfs_mb_isfull(FAR mfs_sb_s *sb);
+
+/****************************************************************************
+ * Name: mfs_mb_flush
+ *
+ * Description:
+ *   Flush the master blocks and write the provided root as the first master
+ *   node.
+ *
+ * Input Parameters:
+ *   sb  - Superblock
+ *   ctz - CTZ of root
+ *
+ * Returned Value:
+ *   - 0 if OK
+ *   - negative if error.
+ *
+ ****************************************************************************/
+
+int mfs_mb_flush(FAR mfs_sb_s *sb, FAR const mfs_ctz_s *ctz);
+
+/****************************************************************************
+ * Name: mfs_mb_allocblks
+ *
+ * Description:
+ *   Allocate new blocks for the master blocks.
+ *
+ * Input Parameters:
+ *   sb  - Superblock
  *   mb1 - Master Block 1
  *   mb2 - Master Block 2
  *
@@ -921,45 +975,26 @@ int mfs_mb_init(FAR mfs_sb_s *sb, const mfs_t mb1, const mfs_t mb2);
  *   - 0 if OK
  *   - negative if error.
  *
- * Assumptions/Limitations:
- *   - The superblock's struct is basically missing a lot of information
- *     before this, so it's adivsable to use this function as quickly as
- *     possible.
- *   - This belongs to the *_init group of functions, which are supposed to
- *     be used only in cases where the device is already formatted with
- *     mnemofs and the on-device data needs to be read and initialized.
- *
  ****************************************************************************/
 
-int mfs_mb_mv(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
+int mfs_mb_allocblks(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
 
 /****************************************************************************
- * Name: mfs_mb_wr
+ * Name: mfs_mb_freeblks
  *
  * Description:
- *   Write a master node (and thus superblock) to the latest available place
- *   for the master node.
+ *   Free blocks allocated for the master blocks.
  *
  * Input Parameters:
- *   sb - Superblock
- *   pg - Page
+ *   sb  - Superblock
+ *   mb1 - Master Block 1
+ *   mb2 - Master Block 2
  *
  * Returned Value:
  *   - 0 if OK
  *   - negative if error.
  *
  ****************************************************************************/
-
-int mfs_mb_wr(FAR mfs_sb_s *sb, mfs_pgloc_t *pg);
-
-bool mfs_mb_isfull(FAR mfs_sb_s *sb);
-
-int mfs_mb_wrmn(FAR mfs_sb_s *sb, FAR const mfs_ctz_s *ctz);
-
-int mfs_mb_flush_wrmn(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2,
-                      FAR const mfs_ctz_s *ctz);
-
-int mfs_mb_allocblks(FAR mfs_sb_s *sb, FAR mfs_t *mb1, FAR mfs_t *mb2);
 
 int mfs_mb_freeblks(FAR mfs_sb_s *sb, FAR const mfs_t mb1,
                     FAR const mfs_t mb2);

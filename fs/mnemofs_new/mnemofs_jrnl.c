@@ -201,17 +201,15 @@ jrnl_mv(FAR mfs_sb_s *sb)
   fmt_mb  = mfs_mb_isfull(sb);
   if (fmt_mb)
     {
-      ret = mfs_mb_flush_wrmn(sb, &mb1, &mb2, &root);
+      ret = mfs_mb_flush(sb, &root);
       if (ret < 0)
         {
           goto errout_with_mb;
         }
     }
-  else
-    {
-      mb1 = sb->mb1;
-      mb2 = sb->mb2;
-    }
+
+  mb1 = MFS_MB(sb).mb1;
+  mb2 = MFS_MB(sb).mb2;
 
   /* Write new journal header */
 
@@ -1834,8 +1832,8 @@ mfs_jrnl_init(FAR mfs_sb_s *sb, mfs_t blk)
       goto errout;
     }
 
-  sb->mb1         = mb1;
-  sb->mb2         = mb2;
+  MFS_MB(sb).mb1  = mb1;
+  MFS_MB(sb).mb2  = mb2;
   sb->blk_sz      = blk_sz;
   sb->n_blks      = n_blks;
   sb->n_pg_in_blk = pg_in_blk;
@@ -1916,7 +1914,7 @@ mfs_jrnl_flush(FAR mfs_sb_s *sb)
 
   /* Traverse the entire tree in a post-fix manner updating the tree. */
 
-  ret      = mfs_mb_getroot(sb, &root_ctz);
+  ret      = mfs_mb_rd(sb, &root_ctz);
   if (ret < 0)
     {
       goto errout_with_flush_bm;
