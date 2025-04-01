@@ -55,7 +55,6 @@
  * Included Files
  ****************************************************************************/
 
-#include "fs_heap.h"
 #include "mnemofs.h"
 #include <assert.h>
 #include <math.h>
@@ -89,6 +88,11 @@ static mfs_t ctz_idxdatasz(FAR const mfs_sb_s * sb, const mfs_t idx);
 static void mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
                                  FAR mfs_t *pg_off, FAR mfs_t *idx);
 
+static int apply_ctzptrs(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz,
+                         const mfs_t idx, FAR char *pg_buf);
+
+static mfs_t msb_idx(mfs_t x);
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -101,6 +105,23 @@ static void mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
  * Private Functions
  ****************************************************************************/
 
+/****************************************************************************
+ * Name: ctz
+ *
+ * Description:
+ *   Calculate CTZ of a number.
+ *
+ * Input Parameters:
+ *   x - Number
+ *
+ * Returned Value:
+ *   CTZ of the given number
+ *
+ * Assumptions/Limitations:
+ *   - x is a natural number.
+ *
+ ****************************************************************************/
+
 static inline mfs_t
 ctz(const uint32_t x)
 {
@@ -108,11 +129,42 @@ ctz(const uint32_t x)
   return __builtin_ctz(x);
 }
 
+/****************************************************************************
+ * Name: clz
+ *
+ * Description:
+ *   Calculate CLZ of a number.
+ *
+ * Input Parameters:
+ *   x - Number
+ *
+ * Returned Value:
+ *   CLZ of the given number
+ *
+ * Assumptions/Limitations:
+ *   - x does not have all bits set.
+ *
+ ****************************************************************************/
+
 static inline mfs_t
 clz(const uint32_t x)
 {
   return x == UINT32_MAX ? 32 : __builtin_clz(x);
 }
+
+/****************************************************************************
+ * Name: popcnt
+ *
+ * Description:
+ *   Calculate popcount of a number.
+ *
+ * Input Parameters:
+ *   x - Number
+ *
+ * Returned Value:
+ *   Popcount of the given number
+ *
+ ****************************************************************************/
 
 static inline mfs_t
 popcnt(mfs_t x)
@@ -120,17 +172,60 @@ popcnt(mfs_t x)
   return __builtin_popcount(x);
 }
 
+/****************************************************************************
+ * Name: ctz_idx_nptrs
+ *
+ * Description:
+ *   Number of pointers a page at an index will have in a CTZ.
+ *
+ * Input Parameters:
+ *   idx - Page index
+ *
+ * Returned Value:
+ *   Number of pointers.
+ *
+ ****************************************************************************/
+
 static mfs_t
 ctz_idx_nptrs(const mfs_t idx)
 {
   return (idx == 0) ? 0 : ctz(idx) + 1;
 }
 
+/****************************************************************************
+ * Name: ctz_idxdatasz
+ *
+ * Description:
+ *   Size available for storing data in a CTZ page at an index.
+ *
+ * Input Parameters:
+ *   sb  - Superblock
+ *   idx - Page index
+ *
+ * Returned Value:
+ *   Data size
+ *
+ ****************************************************************************/
+
 static mfs_t
 ctz_idxdatasz(FAR const mfs_sb_s * sb, const mfs_t idx)
 {
   return MFS_PGSZ(sb) - (ctz_idx_nptrs(idx) * MFS_LOGPGSZ);
 }
+
+/****************************************************************************
+ * Name: mfs_ctz_idx_from_off
+ *
+ * Description:
+ *   Calculate the index of a CTZ page from the offset into the data.
+ *
+ * Input Parameters:
+ *   sb     - Superblock
+ *   off    - Data offset
+ *   pg_off - Offset into the page.
+ *   idx    - Index of the CTZ page.
+ *
+ ****************************************************************************/
 
 static void
 mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
@@ -162,13 +257,25 @@ mfs_ctz_idx_from_off(FAR const mfs_sb_s *sb, const mfs_t off,
   return;
 }
 
-mfs_t
-ctz_nptrs(const mfs_t idx)
-{
-  return (idx == 0) ? 0 : ctz(idx) + 1;
-}
+/****************************************************************************
+ * Name: apply_ctzptrs
+ *
+ * Description:
+ *   Apply all the pointers a block at a particular index in the CTZ skip
+ *   list will have to the buffer.
+ *
+ *   NOTE: If the last index is idx in CTZ, this function can only work with
+ *   values from [0, idx + 1].
+ *
+ * Input Parameters:
+ *   sb     - Superblock
+ *   ctz    - CTZ Skip List
+ *   idx    - Index of the CTZ page.
+ *   pg_buf - Buffer.
+ *
+ ****************************************************************************/
 
-int
+static int
 apply_ctzptrs(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz, const mfs_t idx,
               FAR char *pg_buf)
 {
@@ -182,7 +289,7 @@ apply_ctzptrs(FAR mfs_sb_s *sb, FAR mfs_ctz_s *ctz, const mfs_t idx,
 
   DEBUGASSERT(idx <= s_idx + 1);
 
-  n_ptrs = ctz_nptrs(idx);
+  n_ptrs = ctz_idx_nptrs(idx);
 
   for (mfs_t i = 0; i < n_ptrs; i++)
     {
@@ -201,10 +308,21 @@ errout:
   return ret;
 }
 
+/****************************************************************************
+ * Name: msb_idx
+ *
+ * Description:
+ *   Index of the most significant bit of a number.
+ *
+ * Input Parameters:
+ *   x - Number.
+ *
+ ****************************************************************************/
+
 static mfs_t
-msb_idx(mfs_t n)
+msb_idx(mfs_t x)
 {
-  return 32 - clz(n) - 1;
+  return 32 - clz(x) - 1;
 }
 
 /****************************************************************************
