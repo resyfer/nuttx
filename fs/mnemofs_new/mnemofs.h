@@ -75,11 +75,14 @@
 #define MFS_MB_MAGIC    0xE9861B66U
 #define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
 
+#define MFS_MTD(sb)     ((sb)->drv->u.i_mtd)
 #define MFS_JRNL(sb)    ((sb)->jrnl)
 #define MFS_MB(sb)      ((sb)->mb)
 #define MFS_PGSZ(sb)    ((sb)->pg_sz)
 #define MFS_BLKSZ(sb)   ((sb)->blk_sz)
 #define MFS_PGINBLK(sb) ((sb)->n_pg_in_blk)
+#define MFS_NBLKS(sb)   ((sb)->n_blks)
+#define MFS_RW(sb)      ((sb)->rw)
 #define MFS_LOGPGSZ     4
 
 #define MFS_CEILDIV(n, d)   (((n) + (d) - 1) / (d))
@@ -117,7 +120,7 @@ typedef struct
 
 typedef struct
 {
-  char *pg_buf; /* TODO: Add just one step history. */
+  FAR uint8_t *pg_buf; /* TODO: Add just one step history. */
 } mfs_rw_s;
 
 /* Superblock */
@@ -132,6 +135,8 @@ typedef struct
   mfs_t       n_blks;
   mfs_t       mb1;
   mfs_t       mb2;
+  FAR struct inode *drv;
+  mfs_rw_s    rw;
 } mfs_sb_s;
 
 /* Byte Location */
@@ -204,7 +209,7 @@ extern "C"
  *   Check if a block is a bad block.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb  - Superblock
  *   blk - The block
  *
  * Returned Value:
@@ -223,7 +228,7 @@ int mfs_rw_isbad(FAR const mfs_sb_s * sb, mfs_t blk);
  *   Mark a block as bad block.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb  - Superblock
  *   blk - The block
  *
  * Returned Value:
@@ -246,9 +251,9 @@ int mfs_rw_markbad(FAR const mfs_sb_s * sb, mfs_t blk);
  *   Read a page.
  *
  * Input Parameters:
- *   sb - Superblock
- *   pg - The page
- *   buf - The read buffer
+ *   sb    - Superblock
+ *   pg    - The page
+ *   buf   - The read buffer
  *   n_buf - Length of buf
  *
  * Returned Value:
@@ -267,9 +272,9 @@ int mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
  *   Read a buffer from an offset into a page.
  *
  * Input Parameters:
- *   sb - Superblock
- *   b - Byte location
- *   buf - The read buffer
+ *   sb    - Superblock
+ *   b     - Byte location
+ *   buf   - The read buffer
  *   n_buf - Length of buf
  *
  * Returned Value:
@@ -288,9 +293,9 @@ int mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_bloc_t *b,
  *   Write to a page.
  *
  * Input Parameters:
- *   sb - Superblock
- *   pg - The page
- *   buf - The write buffer
+ *   sb    - Superblock
+ *   pg    - The page
+ *   buf   - The write buffer
  *   n_buf - Length of buf
  *
  * Returned Value:
@@ -309,9 +314,9 @@ int mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
  *   Write a buffer to an offset into a page.
  *
  * Input Parameters:
- *   sb - Superblock
- *   b - Byte location
- *   buf - The read buffer
+ *   sb    - Superblock
+ *   b     - Byte location
+ *   buf   - The read buffer
  *   n_buf - Length of buf
  *
  * Returned Value:
@@ -327,13 +332,13 @@ int mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
                    FAR const char *buf, const mfs_t n_buf);
 
 /****************************************************************************
- * Name: mfs_rw_blker
+ * Name: mfs_rw_blkerase
  *
  * Description:
  *   Erase a block.
  *
  * Input Parameters:
- *   sb - Superblock
+ *   sb  - Superblock
  *   blk - The block
  *
  * Returned Value:
@@ -342,7 +347,28 @@ int mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
  *
  ****************************************************************************/
 
-int mfs_rw_blker(FAR mfs_sb_s * sb, const mfs_t blk);
+int mfs_rw_blkerase(FAR mfs_sb_s * sb, const mfs_t blk);
+
+/****************************************************************************
+ * Name: mfs_rw_nblkerase
+ *
+ * Description:
+ *   Erase n blocks.
+ *
+ *   It will erase from [blk, blk + n_blks).
+ *
+ * Input Parameters:
+ *   sb     - Superblock
+ *   n_blks - Number of blocks
+ *   blk    - Starting block
+ *
+ * Returned Value:
+ *   - 0 if OK.
+ *   - negative if error.
+ *
+ ****************************************************************************/
+
+int mfs_rw_nblkerase(FAR mfs_sb_s * sb, const mfs_t blk, const mfs_t n_blks);
 
 /* mnemofs_ctz.c */
 

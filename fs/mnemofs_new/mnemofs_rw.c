@@ -56,6 +56,7 @@
  ****************************************************************************/
 
 #include <stdbool.h>
+#include <nuttx/mtd/mtd.h>
 
 #include "mnemofs.h"
 
@@ -90,59 +91,143 @@
 int
 mfs_rw_isbad(FAR const mfs_sb_s * sb, mfs_t blk)
 {
-  /* TODO */
+  if (predict_false(blk > MFS_NBLKS(sb)))
+    {
+      return -EINVAL;
+    }
 
-  return 0;
+  return MTD_ISBAD(MFS_MTD(sb), blk);
 }
 
 int
 mfs_rw_markbad(FAR const mfs_sb_s * sb, mfs_t blk)
 {
-  /* TODO */
+  if (predict_false(blk > MFS_NBLKS(sb)))
+    {
+      return -EINVAL;
+    }
 
-  return 0;
+  return MTD_MARKBAD(MFS_MTD(sb), blk);
 }
 
 int
 mfs_rw_pgrd(FAR const mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
             FAR char *buf, const mfs_t n_buf)
 {
-  /* TODO */
+  int   ret   = OK;
+  mfs_t page;
 
-  return 0;
+  if (predict_false(pg->blk >= MFS_NBLKS(sb) ||
+                    pg->blk_off >= MFS_PGINBLK(sb)))
+    {
+      return -EINVAL;
+    }
+
+  page = pg->blk * MFS_PGINBLK(sb) + pg->blk_off;
+  ret  = MTD_BREAD(MFS_MTD(sb), page, 1, MFS_RW(sb).pg_buf);
+  if (predict_false(ret < 0))
+    {
+      goto errout_with_reset;
+    }
+
+  memcpy(buf, MFS_RW(sb).pg_buf, MFS_MIN(n_buf, MFS_PGSZ(sb)));
+
+errout_with_reset:
+  memset(MFS_RW(sb).pg_buf, 0, MFS_PGSZ(sb));
+  return ret;
 }
 
 int
 mfs_rw_pgrdoff(FAR const mfs_sb_s * sb, FAR const mfs_bloc_t *b,
                FAR char *buf, const mfs_t n_buf)
 {
-  /* TODO */
+  int   ret   = OK;
+  mfs_t page;
 
-  return 0;
+  if (predict_false(b->blk >= MFS_NBLKS(sb) ||
+                    b->blk_off >= MFS_PGINBLK(sb) ||
+                    b->pg_off >= MFS_PGSZ(sb)))
+    {
+      return -EINVAL;
+    }
+
+  page = b->blk * MFS_PGINBLK(sb) + b->blk_off;
+  ret  = MTD_BREAD(MFS_MTD(sb), page, 1, MFS_RW(sb).pg_buf);
+  if (predict_false(ret < 0))
+    {
+      goto errout_with_reset;
+    }
+
+  memcpy(buf, MFS_RW(sb).pg_buf + b->pg_off,
+         MFS_MIN(n_buf, MFS_PGSZ(sb) - b->pg_off));
+
+errout_with_reset:
+  memset(MFS_RW(sb).pg_buf, 0, MFS_PGSZ(sb));
+  return ret;
 }
 
 int
 mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
             FAR const char *buf, const mfs_t n_buf)
 {
-  /* TODO */
+  int ret = OK;
+  mfs_t page;
 
-  return 0;
+  if (predict_false(pg->blk >= MFS_NBLKS(sb) ||
+                    pg->blk_off >= MFS_PGINBLK(sb)))
+    {
+      return -EINVAL;
+    }
+
+  memcpy(MFS_RW(sb).pg_buf, buf, MFS_MIN(n_buf, MFS_PGSZ(sb)));
+  page = pg->blk * MFS_PGINBLK(sb) + pg->blk_off;
+  ret  = MTD_BWRITE(MFS_MTD(sb), page, 1, MFS_RW(sb).pg_buf);
+
+  memset(MFS_RW(sb).pg_buf, 0, MFS_PGSZ(sb));
+  return ret;
 }
 
 int
 mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
                FAR const char *buf, const mfs_t n_buf)
 {
-  /* TODO */
+  int ret = OK;
+  mfs_t page;
 
-  return 0;
+  if (predict_false(b->blk >= MFS_NBLKS(sb) ||
+                    b->blk_off >= MFS_PGINBLK(sb) ||
+                    b->pg_off >= MFS_PGSZ(sb)))
+    {
+      return -EINVAL;
+    }
+
+  memcpy(MFS_RW(sb).pg_buf + b->pg_off, buf,
+         MFS_MIN(n_buf, MFS_PGSZ(sb) - b->pg_off));
+  page = b->blk * MFS_PGINBLK(sb) + b->blk_off;
+  ret  = MTD_BWRITE(MFS_MTD(sb), page, 1, MFS_RW(sb).pg_buf);
+
+  memset(MFS_RW(sb).pg_buf, 0, MFS_PGSZ(sb));
+  return ret;
 }
 
 int
-mfs_rw_blker(FAR mfs_sb_s * sb, const mfs_t blk)
+mfs_rw_blkerase(FAR mfs_sb_s * sb, const mfs_t blk)
 {
-  /* TODO */
+  if (predict_false(blk > MFS_NBLKS(sb)))
+    {
+      return -EINVAL;
+    }
 
-  return 0;
+  return MTD_ERASE(MFS_MTD(sb), blk, 1);
+}
+
+int
+mfs_rw_nblkerase(FAR mfs_sb_s * sb, const mfs_t blk, const mfs_t n_blks)
+{
+  if (predict_false(blk + n_blks > MFS_NBLKS(sb)))
+    {
+      return -EINVAL;
+    }
+
+  return MTD_ERASE(MFS_MTD(sb), blk, n_blks);
 }
