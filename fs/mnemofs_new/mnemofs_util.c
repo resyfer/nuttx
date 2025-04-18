@@ -100,3 +100,23 @@ mfs_util_pgloc_to_pg(FAR const mfs_sb_s *sb, FAR const mfs_pgloc_t *pgloc)
 {
   return pgloc->blk * MFS_PGINBLK(sb) + pgloc->blk_off;
 }
+
+mfs_t
+mfs_util_calc_chksm(FAR const char *buf, const mfs_t n_buf)
+{
+  mfs_t       chksm   = 0;
+  mfs_t       term1;
+  mfs_t       term2;
+  mfs_t       product;
+  const mfs_t n       = n_buf / 2;
+
+  for (mfs_t i = 0; i < n_buf; i++)
+    {
+      term1   = (buf[i] + i) % UINT32_MAX;
+      term2   = (buf[n_buf - i - 1] + (n_buf - i - 1)) % UINT32_MAX;
+      product = (term1 * term2) % UINT32_MAX;
+      chksm   += (product ^ (n - i)) << (i % 32);
+    }
+
+  return chksm;
+}

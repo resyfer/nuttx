@@ -57,10 +57,12 @@
  * Included Files
  ****************************************************************************/
 
+#include <limits.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/list.h>
 #include <nuttx/mtd/mtd.h>
 #include <stdint.h>
+#include <time.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -72,6 +74,7 @@
 #define MFS_JRNL_LOGSZ        64
 #define MFS_JRNL_BLKENTRYSZ   16
 #define MFS_MN_SZ             24
+#define MFS_DIRENT_SZ         64
 
 #define MFS_MB_MAGIC    0xE9861B66U
 #define MFS_MB_CHKSM    -(MFS_MB_MAGIC)
@@ -166,17 +169,35 @@ typedef struct
   mfs_t sz;         /* Size of CTZ. TODO: Change this to last index. */
 } mfs_ctz_s;
 
-/* Open directory structure */
-
-typedef struct
-{
-} mfs_dir_s;
-
 /* Direntry structure. */
 
 typedef struct
 {
+  mfs_t name_chksm;
+  uint16_t mode;
+  uint16_t _res;
+  struct timespec st_ctim;
+  struct timespec st_mtim;
+  mfs_t sz;
+  mfs_pgloc_t pg;
+  FAR char name[NAME_MAX];
 } mfs_dirent_s;
+
+/* Open directory structure */
+
+typedef struct
+{
+  int32_t     idx;
+  mfs_bloc_t  b;
+} mfs_dir_s;
+
+typedef struct
+{
+  struct list_node list;
+  mfs_t            idx;
+  mfs_pgloc_t      pg;
+  mfs_dirent_s     dirent;
+} mfs_path_s;
 
 /* Open file structure. */
 
@@ -216,6 +237,18 @@ int mfs_alloc_init(FAR mfs_sb_s *sb);
 int mfs_alloc_fmt(FAR mfs_sb_s *sb);
 int mfs_alloc_flush(FAR mfs_sb_s *sb);
 
+/* mnemofs_dir.c */
+
+void mfs_dir_init(const mfs_pgloc_t *pg, FAR mfs_dir_s *dir);
+int mfs_dir_rdnadv(FAR mfs_sb_s *sb, FAR const mfs_dir_s *o_dir,
+                   FAR mfs_dirent_s *dirent, FAR mfs_dir_s *n_dir);
+int mfs_dir_get_from_path(FAR mfs_sb_s *sb, FAR char *path,
+                          FAR mfs_path_s *p);
+int mfs_dir_append(FAR mfs_sb_s *sb, FAR mfs_path_s *dir_list,
+                   FAR mfs_dirent_s *dirent);
+int mfs_dir_rm(FAR mfs_sb_s *sb, FAR mfs_path_s *dir_list,
+               FAR mfs_t dirent_idx);
+
 /* mnemofs_ctz.c */
 
 int mfs_ctz_travel(FAR mfs_sb_s * const sb, const mfs_t s_idx,
@@ -240,12 +273,15 @@ int mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
 int mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
                 FAR const char *buf, const mfs_t n_buf);
 int mfs_rw_blkerase(FAR mfs_sb_s * sb, const mfs_t blk);
+int mfs_rw_rd_cpy_to_wr(FAR mfs_sb_s *sb, FAR mfs_t wr_pg);
+void mfs_rw_del_n_wrbuf(FAR mfs_sb_s * sb, const mfs_t idx, const mfs_t n);
 
 /* mnemofs_util.c */
 
 mfs_pgloc_t mfs_util_pg_to_pgloc(FAR const mfs_sb_s *sb, const mfs_t pg);
 mfs_t mfs_util_pgloc_to_pg(FAR const mfs_sb_s *sb,
                            FAR const mfs_pgloc_t *pgloc);
+mfs_t mfs_util_calc_chksm(FAR const char *buf, const mfs_t n_buf);
 
 #undef EXTERN
 #ifdef __cplusplus

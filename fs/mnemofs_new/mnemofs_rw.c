@@ -157,8 +157,11 @@ mfs_rw_pgrdoff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b, FAR char *buf,
       MFS_RW(sb).rd_pg = page;
     }
 
-  memcpy(buf + b->pg_off, MFS_RW(sb).rd_buf,
-         MFS_MIN(n_buf, MFS_PGSZ(sb) - b->pg_off));
+  if (buf != NULL)
+    {
+      memcpy(buf + b->pg_off, MFS_RW(sb).rd_buf,
+            MFS_MIN(n_buf, MFS_PGSZ(sb) - b->pg_off));
+    }
 
 errout:
   return ret;
@@ -200,7 +203,7 @@ mfs_rw_pgwroff(FAR mfs_sb_s * sb, FAR const mfs_bloc_t *b,
 
   if (page != MFS_RW(sb).wr_pg)
     {
-      ret  = MTD_BWRITE(MFS_MTD(sb), page, 1, MFS_RW(sb).wr_buf);
+      ret  = MTD_BWRITE(MFS_MTD(sb), MFS_RW(sb).wr_pg, 1, MFS_RW(sb).wr_buf);
       if (ret != 0)
         {
           goto errout;
@@ -230,6 +233,30 @@ mfs_rw_pgwr(FAR mfs_sb_s * sb, FAR const mfs_pgloc_t *pg,
 }
 
 int
+mfs_rw_rd_cpy_to_wr(FAR mfs_sb_s *sb, FAR mfs_t wr_pg)
+{
+  int ret = OK;
+
+  DEBUGASSERT(MFS_RW(sb).wr_pg == 0 ||
+              (MFS_RW(sb).wr_pg != MFS_RW(sb).rd_pg));
+
+  if (MFS_RW(sb).wr_pg != 0)
+    {
+      ret  = MTD_BWRITE(MFS_MTD(sb), MFS_RW(sb).wr_pg, 1, MFS_RW(sb).wr_buf);
+      if (ret != 0)
+        {
+          goto errout;
+        }
+    }
+
+  MFS_RW(sb).wr_pg = wr_pg;
+  memcpy(MFS_RW(sb).wr_buf, MFS_RW(sb).rd_buf, MFS_PGSZ(sb));
+
+errout:
+  return ret;
+}
+
+int
 mfs_rw_blkerase(FAR mfs_sb_s * sb, const mfs_t blk)
 {
   mfs_t pg;
@@ -251,4 +278,11 @@ mfs_rw_blkerase(FAR mfs_sb_s * sb, const mfs_t blk)
     }
 
   return MTD_ERASE(MFS_MTD(sb), blk, 1);
+}
+
+void
+mfs_rw_del_n_wrbuf(FAR mfs_sb_s * sb, const mfs_t idx, const mfs_t n)
+{
+  memmove(MFS_RW(sb).wr_buf + idx, MFS_RW(sb).wr_buf + idx + n,
+          MFS_PGSZ(sb) - idx - n + 1);
 }
