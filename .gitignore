@@ -88,3 +88,6 @@ SAVEconfig
 .aider*
 imx9-norimage.img
 config.txt
+.python-version
+pyproject.toml
+uv.lock

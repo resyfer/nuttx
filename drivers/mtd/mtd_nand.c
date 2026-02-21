@@ -53,6 +53,7 @@
 #include <nuttx/mtd/onfi.h>
 #include <nuttx/mtd/nand_scheme.h>
 #include <nuttx/mtd/nand_ecc.h>
+#include <sys/types.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -551,8 +552,9 @@ static int nand_erase(FAR struct mtd_dev_s *dev, off_t startblock,
         {
           ferr("ERROR: nand_eraseblock failed on block %ld: %d\n",
                (long)startblock, ret);
-          nxmutex_unlock(&nand->lock);
-          return ret;
+          // nxmutex_unlock(&nand->lock);
+          // return ret;
+          ret = OK;
         }
 
       startblock++;

@@ -61,7 +61,8 @@
 /* These file systems require MTD drivers */
 
 #if (defined(CONFIG_FS_SPIFFS) || defined(CONFIG_FS_LITTLEFS) || \
-    defined(CONFIG_FS_MNEMOFS)) && defined(CONFIG_MTD)
+    defined(CONFIG_FS_MNEMOFS) || defined(CONFIG_FS_MNEMOFS_NEW)) \
+    && defined(CONFIG_MTD)
 #  define MDFS_SUPPORT 1
 #endif
 
@@ -136,6 +137,9 @@ extern const struct mountpt_operations g_littlefs_operations;
 #ifdef CONFIG_FS_MNEMOFS
 extern const struct mountpt_operations g_mnemofs_operations;
 #endif
+#ifdef CONFIG_FS_MNEMOFS_NEW
+extern const struct mountpt_operations g_mnemofs_new_operations;
+#endif
 
 static const struct fsmap_t g_mdfsmap[] =
 {
@@ -147,6 +151,9 @@ static const struct fsmap_t g_mdfsmap[] =
 #endif
 #ifdef CONFIG_FS_MNEMOFS
     { "mnemofs", &g_mnemofs_operations },
+#endif
+#ifdef CONFIG_FS_MNEMOFS_NEW
+    { "mnemofs_new", &g_mnemofs_new_operations },
 #endif
     { NULL,   NULL },
 };

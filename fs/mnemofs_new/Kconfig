@@ -1,0 +1,22 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config FS_MNEMOFS_NEW
+	bool "MNEMOFS_NEW NAND Flash File System"
+	default n
+	depends on !DISABLE_MOUNTPOINT && MTD
+	---help---
+		Build the mnemofs_new NAND flash file system.
+
+if FS_MNEMOFS_NEW
+
+config MNEMOFS_NEW_EXTRA_DEBUG
+	bool "MNEMOFS_NEW Extra Debug Logs"
+	default n
+	depends on FS_MNEMOFS_NEW
+	---help---
+		Prints extra log information related to mnemofs_new.
+
+endif # FS_MNEMOFS_NEW

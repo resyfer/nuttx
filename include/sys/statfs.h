@@ -84,7 +84,7 @@
 #define _XIAFS_SUPER_MAGIC    0x012fd16d
 #define SPIFFS_SUPER_MAGIC    0x20090315
 #define LITTLEFS_SUPER_MAGIC  0x0a732923
-#define MNEMOFS_SUPER_MAGIC   0x704b8e4d
+#define MNEMOFS_SUPER_MAGIC   0x42E0C894
 
 /* NuttX specific file-systems */
 
