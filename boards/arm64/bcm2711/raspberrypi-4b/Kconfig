@@ -5,31 +5,31 @@
 
 if ARCH_BOARD_RASPBERRYPI_4B
 
-choice
-	prompt "Raspberry Pi 4B RAM size"
-	default RPI4B_RAM_4GB
+	choice
+		prompt "Raspberry Pi 4B RAM size"
+		default RPI4B_RAM_4GB
 
-config RPI4B_RAM_1GB
-	bool "1GB RAM"
-	---help---
-		Support for the 1GB variant of the Raspberry Pi 4B.
+	config RPI4B_RAM_1GB
+		bool "1GB RAM"
+		---help---
+			Support for the 1GB variant of the Raspberry Pi 4B.
 
-config RPI4B_RAM_2GB
-	bool "2GB RAM"
-	---help---
-		Support for the 2GB variant of the Raspberry Pi 4B.
+	config RPI4B_RAM_2GB
+		bool "2GB RAM"
+		---help---
+			Support for the 2GB variant of the Raspberry Pi 4B.
 
-config RPI4B_RAM_4GB
-	bool "4GB RAM"
-	---help---
-		Support for the 4GB variant of the Raspberry Pi 4B.
+	config RPI4B_RAM_4GB
+		bool "4GB RAM"
+		---help---
+			Support for the 4GB variant of the Raspberry Pi 4B.
 
-config RPI4B_RAM_8GB
-	bool "8GB RAM"
-	---help---
-		Support for the 8GB variant of the Raspberry Pi 4B.
+	config RPI4B_RAM_8GB
+		bool "8GB RAM"
+		---help---
+			Support for the 8GB variant of the Raspberry Pi 4B.
 
-endchoice # Raspberry Pi 4B RAM size
+	endchoice # Raspberry Pi 4B RAM size
 
 config RPI4B_DEBUG_BOOT
 	bool "Raspberry Pi 4B bootloader debug output"
@@ -59,5 +59,152 @@ config RPI4B_FRAMEBUFFER
 	default BCM2711_FRAMEBUFFER
 	---help---
 		Registers a frame buffer character driver for graphical output.
+
+menu "Raspberry Pi 4B Pin Configuration"
+	config RPI4B_GPIO0
+    int "GPIO 0 (0:SDA0, 1:SA5, 2:PCLK, 3:SPI3_CE0_N, 4:TXD2, 5:SDA6, 6:IN, 7:OUT)"
+    range 0 7
+    default 0
+  	---help---
+   		Reserved for I2C to Raspberry Pi HAT EEPROM. Disable EEPROM forced read and FAN I/O to use it otherwise.
+
+  config RPI4B_GPIO1
+    int "GPIO 1 (0:SCL0, 1:SA4, 2:DE, 3:SPI3_MISO, 4:RXD2, 5:SCL6, 6:IN, 7:OUT)"
+    range 0 7
+    default 0
+  	---help---
+   		Reserved for I2C to Raspberry Pi HAT EEPROM. Disable EEPROM forced read and FAN I/O to use it otherwise.
+
+  config RPI4B_GPIO2
+    int "GPIO 2 (0:SDA1, 1:SA3, 2:LCD_VSYNC, 3:SPI3_MOSI, 4:CTS2, 5:SDA3, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO3
+    int "GPIO 3 (0:SCL1, 1:SA2, 2:LCD_HSYNC, 3:SPI3_SCLK, 4:RTS2, 5:SCL3, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO4
+    int "GPIO 4 (0:GPCLK0, 1:SA1, 2:DPI_D0, 3:SPI4_CE0_N, 4:TXD3, 5:SDA3, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO5
+    int "GPIO 5 (0:GPCLK1, 1:SA0, 2:DPI_D1, 3:SPI4_MISO, 4:RXD3, 5:SCL3, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO6
+    int "GPIO 6 (0:GPCLK2, 1:SOE_N/SE, 2:DPI_D2, 3:SPI4_MOSI, 4:CTS3, 5:SDA4, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO7
+    int "GPIO 7 (0:SPI0_CE1_N, 1:SWE_N/SRW_N, 2:DPI_D3, 3:SPI4_SCLK, 4:RTS3, 5:SCL4, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO8
+    int "GPIO 8 (0:SPI0_CE0_N, 1:SD0, 2:DPI_D4, 3:BSCSL/CE_N, 4:TXD4, 5:SDA4, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO9
+    int "GPIO 9 (0:SPI0_MISO, 1:SD1, 2:DPI_D5, 3:BSCSL/MISO, 4:RXD4, 5:SCL4, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO10
+    int "GPIO 10 (0:SPI0_MOSI, 1:SD2, 2:DPI_D6, 3:BSCSL_SDA/MOSI, 4:CTS4, 5:SDA5, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO11
+    int "GPIO 11 (0:SPI0_SCLK, 1:SD3, 2:DPI_D7, 3:BSCSL_SCL/SCLK, 4:RTS4, 5:SCL5, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO12
+    int "GPIO 12 (0:PWM0_0, 1:SD4, 2:DPI_D8, 3:SPI5_CE0_N, 4:TXD5, 5:SDA5, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO13
+    int "GPIO 13 (0:PWM0_1, 1:SD5, 2:DPI_D9, 3:SPI5_MISO, 4:RXD5, 5:SCL5, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO14
+    int "GPIO 14 (0:TXD0, 1:SD6, 2:DPI_D10, 3:SPI5_MOSI, 4:CTS5, 5:TXD1, 6:IN, 7:OUT)"
+    range 0 7
+    default 0
+
+  config RPI4B_GPIO15
+    int "GPIO 15 (0:RXD0, 1:SD7, 2:DPI_D11, 3:SPI5_SCLK, 4:RTS5, 5:RXD1, 6:IN, 7:OUT)"
+    range 0 7
+    default 0
+
+  config RPI4B_GPIO16
+    int "GPIO 16 (0:res, 1:SD8, 2:DPI_D12, 3:CTS0, 4:SPI1_CE2_N, 5:CTS1, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO17
+    int "GPIO 17 (0:res, 1:SD9, 2:DPI_D13, 3:RTS0, 4:SPI1_CE1_N, 5:RTS1, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO18
+    int "GPIO 18 (0:PCM_CLK, 1:SD10, 2:DPI_D14, 3:SPI6_CE0_N, 4:SPI1_CE0_N, 5:PWM0_0, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO19
+    int "GPIO 19 (0:PCM_FS, 1:SD11, 2:DPI_D15, 3:SPI6_MISO, 4:SPI1_MISO, 5:PWM0_1, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO20
+    int "GPIO 20 (0:PCM_DIN, 1:SD12, 2:DPI_D16, 3:SPI6_MOSI, 4:SPI1_MOSI, 5:GPCLK0, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO21
+    int "GPIO 21 (0:PCM_DOUT, 1:SD13, 2:DPI_D17, 3:SPI6_SCLK, 4:SPI1_SCLK, 5:GPCLK1, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO22
+    int "GPIO 22 (0:SD0_CLK, 1:SD14, 2:DPI_D18, 3:SD1_CLK, 4:ARM_TRST, 5:SDA6, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO23
+    int "GPIO 23 (0:SD0_CMD, 1:SD15, 2:DPI_D19, 3:SD1_CMD, 4:ARM_RTCK, 5:SCL6, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO24
+    int "GPIO 24 (0:SD0_DAT0, 1:SD16, 2:DPI_D20, 3:SD1_DAT0, 4:ARM_TDO, 5:SPI3_CE1_N, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO25
+    int "GPIO 25 (0:SD0_DAT1, 1:SD17, 2:DPI_D21, 3:SD1_DAT1, 4:ARM_TCK, 5:SPI4_CE1_N, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO26
+    int "GPIO 26 (0:SD0_DAT2, 1:res, 2:DPI_D22, 3:SD1_DAT2, 4:ARM_TDI, 5:SPI5_CE1_N, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+  config RPI4B_GPIO27
+    int "GPIO 27 (0:SD0_DAT3, 1:res, 2:DPI_D23, 3:SD1_DAT3, 4:ARM_TMS, 5:SPI6_CE1_N, 6:IN, 7:OUT)"
+    range 0 7
+    default 7
+
+endmenu
 
 endif # ARCH_BOARD_RASPBERRYPI_4B

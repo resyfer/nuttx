@@ -49,10 +49,6 @@
 #define LED_ASSERTION            3
 #define LED_PANIC                4
 
-/* TODO: define all the GPIO pins properly */
-
-#define BOARD_NGPIOOUT 1
-#define BOARD_NGPIOIN 1
 #define BOARD_NGPIOINT 0
 
 /* Micro SD card slot number to use */

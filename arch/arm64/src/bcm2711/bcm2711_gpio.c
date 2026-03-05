@@ -145,6 +145,8 @@ static inline void bcm2711_gpio_help_set(uint32_t gpio, uint32_t reg1,
   uint32_t bitmask;
   uint32_t reg;
 
+  DEBUGASSERT(gpio < BCM_GPIO_NUM);
+
   if (gpio <= 31)
     {
       bitmask = (1 << gpio);
@@ -370,35 +372,50 @@ void bcm2711_gpio_set_func(uint32_t gpio, enum bcm2711_gpio_func_e func)
   DEBUGASSERT(gpio < BCM_GPIO_NUM);
 
   uint32_t value = 0;
+  uint32_t mask = 0;
+  uint32_t shift = 0;
+
   if (gpio <= 9)
     {
-      value = (g_fsel_map[func] << (gpio * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL0);
+      shift = (gpio * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL0);
     }
-  else if (gpio <= 19 && gpio > 9)
+  else if (gpio <= 19 && gpio >= 10)
     {
-      value = (g_fsel_map[func] << ((gpio - 10) * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL1);
+      shift = ((gpio - 10) * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL1);
     }
-  else if (gpio <= 29 && gpio > 20)
+  else if (gpio <= 29 && gpio >= 20)
     {
-      value = (g_fsel_map[func] << ((gpio - 20) * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL2);
+      shift = ((gpio - 20) * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL2);
     }
-  else if (gpio <= 39 && gpio > 30)
+  else if (gpio <= 39 && gpio >= 30)
     {
-      value = (g_fsel_map[func] << ((gpio - 30) * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL3);
+      shift = ((gpio - 30) * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL3);
     }
-  else if (gpio <= 49 && gpio > 40)
+  else if (gpio <= 49 && gpio >= 40)
     {
-      value = (g_fsel_map[func] << ((gpio - 40) * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL4);
+      shift = ((gpio - 40) * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL4);
     }
-  else if (gpio <= 57 && gpio > 50)
+  else if (gpio <= 57 && gpio >= 50)
     {
-      value = (g_fsel_map[func] << ((gpio - 50) * 3));
-      modreg32(value, value, BCM_GPIO_GPFSEL5);
+      shift = ((gpio - 50) * 3);
+      mask  = (0x7 << shift);
+      value = (g_fsel_map[func] << shift);
+      modreg32(value, mask, BCM_GPIO_GPFSEL4);
     }
 }
 
@@ -419,14 +436,8 @@ void bcm2711_gpio_pin_set(uint32_t gpio, bool set)
 {
   DEBUGASSERT(gpio < BCM_GPIO_NUM);
 
-  if (set)
-    {
-      bcm2711_gpio_help_set(gpio, BCM_GPIO_GPSET0, BCM_GPIO_GPSET0, true);
-    }
-  else
-    {
-      bcm2711_gpio_help_set(gpio, BCM_GPIO_GPCLR0, BCM_GPIO_GPCLR0, true);
-    }
+  bcm2711_gpio_help_set(gpio, BCM_GPIO_GPSET0, BCM_GPIO_GPSET1, set);
+  bcm2711_gpio_help_set(gpio, BCM_GPIO_GPCLR0, BCM_GPIO_GPCLR1, !set);
 }
 
 /****************************************************************************

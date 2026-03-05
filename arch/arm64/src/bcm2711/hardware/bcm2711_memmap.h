@@ -58,17 +58,17 @@
 /* Base addresses for chip registers */
 
 #define BCM_ARMT_BASEADDR                                                    \
-  (BCM_PERIPHERAL_BASEADDR + 0x0000b000) /* ARM timer */
+  (BCM_PERIPHERAL_BASEADDR + 0x0000b000UL) /* ARM timer */
 #define BCM_AUX_BASEADDR                                                     \
-  (BCM_PERIPHERAL_BASEADDR + 0x000215000) /* Auxiliary */
+  (BCM_PERIPHERAL_BASEADDR + 0x000215000UL) /* Auxiliary */
 #define BCM_GPCLK_BASEADDR                                                   \
-  (BCM_PERIPHERAL_BASEADDR + 0x000101000) /* General purpose clock */
+  (BCM_PERIPHERAL_BASEADDR + 0x000101000UL) /* General purpose clock */
 #define BCM_GPIO_BASEADDR                                                    \
-  (BCM_PERIPHERAL_BASEADDR + 0x000200000) /* GPIO */
+  (BCM_PERIPHERAL_BASEADDR + 0x000200000UL) /* GPIO */
 #define BCM_PCM_BASEADDR                                                     \
-  (BCM_PERIPHERAL_BASEADDR + 0x000203000) /* PCM */
+  (BCM_PERIPHERAL_BASEADDR + 0x000203000UL) /* PCM */
 #define BCM_SYST_BASEADDR                                                    \
-  (BCM_PERIPHERAL_BASEADDR + 0x000003000) /* System timer */
+  (BCM_PERIPHERAL_BASEADDR + 0x000003000UL) /* System timer */
 
 /* SPI interface register base addresses */
 

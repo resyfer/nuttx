@@ -37,38 +37,38 @@
 
 /* GPIO register offset definitions */
 
-#define BCM_GPIO_GPFSEL0_OFFSET 0x00 /* GPIO function select 0 */
-#define BCM_GPIO_GPFSEL1_OFFSET 0x04 /* GPIO function select 1 */
-#define BCM_GPIO_GPFSEL2_OFFSET 0x08 /* GPIO function select 2 */
-#define BCM_GPIO_GPFSEL3_OFFSET 0x0c /* GPIO function select 3 */
-#define BCM_GPIO_GPFSEL4_OFFSET 0x10 /* GPIO function select 4 */
-#define BCM_GPIO_GPFSEL5_OFFSET 0x14 /* GPIO function select 5 */
-#define BCM_GPIO_GPSET0_OFFSET 0x1c  /* GPIO pin output set 0 */
-#define BCM_GPIO_GPSET1_OFFSET 0x20  /* GPIO pin output set 1 */
-#define BCM_GPIO_GPCLR0_OFFSET 0x28  /* GPIO pin output clear 0 */
-#define BCM_GPIO_GPCLR1_OFFSET 0x2c  /* GPIO pin output clear 1 */
-#define BCM_GPIO_GPLEV0_OFFSET 0x34  /* GPIO pin level 0 */
-#define BCM_GPIO_GPLEV1_OFFSET 0x38  /* GPIO pin level 1 */
+#define BCM_GPIO_GPFSEL0_OFFSET 0x00UL /* GPIO function select 0 */
+#define BCM_GPIO_GPFSEL1_OFFSET 0x04UL /* GPIO function select 1 */
+#define BCM_GPIO_GPFSEL2_OFFSET 0x08UL /* GPIO function select 2 */
+#define BCM_GPIO_GPFSEL3_OFFSET 0x0cUL /* GPIO function select 3 */
+#define BCM_GPIO_GPFSEL4_OFFSET 0x10UL /* GPIO function select 4 */
+#define BCM_GPIO_GPFSEL5_OFFSET 0x14UL /* GPIO function select 5 */
+#define BCM_GPIO_GPSET0_OFFSET 0x1cUL  /* GPIO pin output set 0 */
+#define BCM_GPIO_GPSET1_OFFSET 0x20UL  /* GPIO pin output set 1 */
+#define BCM_GPIO_GPCLR0_OFFSET 0x28UL  /* GPIO pin output clear 0 */
+#define BCM_GPIO_GPCLR1_OFFSET 0x2cUL  /* GPIO pin output clear 1 */
+#define BCM_GPIO_GPLEV0_OFFSET 0x34UL  /* GPIO pin level 0 */
+#define BCM_GPIO_GPLEV1_OFFSET 0x38UL  /* GPIO pin level 1 */
 
-#define BCM_GPIO_GPEDS0_OFFSET 0x40  /* GPIO pin event detect status 0 */
-#define BCM_GPIO_GPEDS1_OFFSET 0x44  /* GPIO pin event detect status 1 */
-#define BCM_GPIO_GPREN0_OFFSET 0x4c  /* GPIO pin rise edge detect enable 0 */
-#define BCM_GPIO_GPREN1_OFFSET 0x50  /* GPIO pin rise edge detect enable 1 */
-#define BCM_GPIO_GPFEN0_OFFSET 0x58  /* GPIO pin fall edge detect enable 0 */
-#define BCM_GPIO_GPFEN1_OFFSET 0x5c  /* GPIO pin fall edge detect enable 1 */
-#define BCM_GPIO_GPHEN0_OFFSET 0x64  /* GPIO pin high detect enable 0 */
-#define BCM_GPIO_GPHEN1_OFFSET 0x68  /* GPIO pin high detect enable 1 */
-#define BCM_GPIO_GPLEN0_OFFSET 0x70  /* GPIO pin low detect enable 0 */
-#define BCM_GPIO_GPLEN1_OFFSET 0x74  /* GPIO pin low detect enable 1 */
-#define BCM_GPIO_GPAREN0_OFFSET 0x7c /* GPIO pin async rise edge detect 0 */
-#define BCM_GPIO_GPAREN1_OFFSET 0x80 /* GPIO pin async rise edge detect 1 */
-#define BCM_GPIO_GPAFEN0_OFFSET 0x88 /* GPIO pin async fall edge detect 0 */
-#define BCM_GPIO_GPAFEN1_OFFSET 0x8c /* GPIO pin async fall edge detect 1 */
+#define BCM_GPIO_GPEDS0_OFFSET 0x40UL  /* GPIO pin event detect status 0 */
+#define BCM_GPIO_GPEDS1_OFFSET 0x44UL  /* GPIO pin event detect status 1 */
+#define BCM_GPIO_GPREN0_OFFSET 0x4cUL  /* GPIO pin rise edge detect enable 0 */
+#define BCM_GPIO_GPREN1_OFFSET 0x50UL  /* GPIO pin rise edge detect enable 1 */
+#define BCM_GPIO_GPFEN0_OFFSET 0x58UL  /* GPIO pin fall edge detect enable 0 */
+#define BCM_GPIO_GPFEN1_OFFSET 0x5cUL  /* GPIO pin fall edge detect enable 1 */
+#define BCM_GPIO_GPHEN0_OFFSET 0x64UL  /* GPIO pin high detect enable 0 */
+#define BCM_GPIO_GPHEN1_OFFSET 0x68UL  /* GPIO pin high detect enable 1 */
+#define BCM_GPIO_GPLEN0_OFFSET 0x70UL  /* GPIO pin low detect enable 0 */
+#define BCM_GPIO_GPLEN1_OFFSET 0x74UL  /* GPIO pin low detect enable 1 */
+#define BCM_GPIO_GPAREN0_OFFSET 0x7cUL /* GPIO pin async rise edge detect 0 */
+#define BCM_GPIO_GPAREN1_OFFSET 0x80UL /* GPIO pin async rise edge detect 1 */
+#define BCM_GPIO_GPAFEN0_OFFSET 0x88UL /* GPIO pin async fall edge detect 0 */
+#define BCM_GPIO_GPAFEN1_OFFSET 0x8cUL /* GPIO pin async fall edge detect 1 */
 
-#define BCM_GPIO_PUP_PDN_REG0_OFFSET 0xe4 /* GPIO pullup/down reg 0 */
-#define BCM_GPIO_PUP_PDN_REG1_OFFSET 0xe8 /* GPIO pullup/down reg 1 */
-#define BCM_GPIO_PUP_PDN_REG2_OFFSET 0xec /* GPIO pullup/down reg 2 */
-#define BCM_GPIO_PUP_PDN_REG3_OFFSET 0xf0 /* GPIO pullup/down reg 3 */
+#define BCM_GPIO_PUP_PDN_REG0_OFFSET 0xe4UL /* GPIO pullup/down reg 0 */
+#define BCM_GPIO_PUP_PDN_REG1_OFFSET 0xe8UL /* GPIO pullup/down reg 1 */
+#define BCM_GPIO_PUP_PDN_REG2_OFFSET 0xecUL /* GPIO pullup/down reg 2 */
+#define BCM_GPIO_PUP_PDN_REG3_OFFSET 0xf0UL /* GPIO pullup/down reg 3 */
 
 /* GPIO register address definitions */
 
